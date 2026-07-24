@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: sentinel_test
+          POSTGRES_PASSWORD: sentinel_test
+          POSTGRES_DB: sentinel_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U sentinel_test -d sentinel_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test (against PostgreSQL service container)
+        run: npm test
+        env:
+          TEST_DATABASE_URL: postgres://sentinel_test:sentinel_test@localhost:5433/sentinel_test
+
+      - name: Build frontend
+        run: npm run build --workspace=packages/frontend
+
+      - name: Build backend Docker image
+        run: docker build -f packages/backend/Dockerfile .
+
+      - name: Dependency audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=high

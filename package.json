@@ -1,0 +1,18 @@
+{
+  "name": "sentinel",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Multi-tenant compliance control tracker for professional services teams",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "lint": "npm run lint --workspaces",
+    "test": "npm run test --workspace=packages/backend"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

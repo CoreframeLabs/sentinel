@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sentinel
+      POSTGRES_PASSWORD: sentinel_local_dev
+      POSTGRES_DB: sentinel
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel -d sentinel"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Separate database for the integration test suite. Tests must never run
+  # against the development or production database.
+  postgres-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: sentinel_test
+      POSTGRES_PASSWORD: sentinel_test
+      POSTGRES_DB: sentinel_test
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sentinel_test -d sentinel_test"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://sentinel:sentinel_local_dev@postgres:5432/sentinel
+      SESSION_SECRET: local-development-session-secret-not-for-production
+      NODE_ENV: development
+      FRONTEND_URL: http://localhost:5173
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
