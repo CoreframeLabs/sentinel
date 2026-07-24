@@ -1,7 +1,8 @@
+import { execFileSync } from 'child_process';
+import fs from 'fs';
 import path from 'path';
 import { Express } from 'express';
 import { Pool } from 'pg';
-import runner from 'node-pg-migrate';
 import request from 'supertest';
 import { buildApp } from '../src/app';
 import { Config } from '../src/config';
@@ -30,14 +31,20 @@ export interface TestContext {
   close(): Promise<void>;
 }
 
+const BACKEND_ROOT = path.join(__dirname, '..');
+// node-pg-migrate v9 is ESM-only, so tests invoke its CLI (the same entry
+// point production uses) rather than importing it into Jest's CJS runtime.
+// npm workspaces hoist binaries to the repo root; fall back to the local
+// node_modules for non-workspace checkouts.
+const MIGRATE_BIN = [
+  path.join(BACKEND_ROOT, '..', '..', 'node_modules', '.bin', 'node-pg-migrate'),
+  path.join(BACKEND_ROOT, 'node_modules', '.bin', 'node-pg-migrate'),
+].find(fs.existsSync)!;
+
 export async function createTestContext(): Promise<TestContext> {
-  await runner({
-    databaseUrl: TEST_DATABASE_URL,
-    dir: path.join(__dirname, '..', 'migrations'),
-    direction: 'up',
-    migrationsTable: 'pgmigrations',
-    count: Infinity,
-    log: () => undefined,
+  execFileSync(MIGRATE_BIN, ['up', '-m', path.join(BACKEND_ROOT, 'migrations')], {
+    env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
+    stdio: 'pipe',
   });
 
   const pool = new Pool({ connectionString: TEST_DATABASE_URL, max: 5 });
