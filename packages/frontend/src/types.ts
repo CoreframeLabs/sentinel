@@ -22,6 +22,8 @@ export interface Control {
   organisation_id: string;
   name: string;
   description: string;
+  category: string | null;
+  due_date: string | null;
   status: ControlStatus;
   created_at: string;
   updated_at: string;
@@ -71,3 +73,87 @@ export interface AdminAttention {
 }
 
 export type Attention = EmployeeAttention | ManagerAttention | AdminAttention;
+
+/* ---------------- CSV import ---------------- */
+
+/** Control field → CSV column header. */
+export interface ColumnMapping {
+  name?: string;
+  description?: string;
+  category?: string;
+  due_date?: string;
+}
+
+export interface ImportProfile {
+  id: string;
+  organisation_id: string;
+  name: string;
+  column_mapping: ColumnMapping;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ImportRun {
+  id: string;
+  organisation_id: string;
+  profile_id: string | null;
+  filename_checksum: string;
+  total_rows: number;
+  accepted_rows: number;
+  rejected_rows: number;
+  created_by: string;
+  created_at: string;
+}
+
+export interface ImportRowResult {
+  id: string;
+  import_run_id: string;
+  row_number: number;
+  row_checksum: string;
+  status: 'accepted' | 'rejected';
+  rejection_reason: string | null;
+  control_id: string | null;
+  created_at: string;
+}
+
+export interface ParseResult {
+  headers: string[];
+  preview: string[][];
+  totalRows: number;
+  filenameChecksum: string;
+}
+
+export interface DryRunResult {
+  totalRows: number;
+  acceptedRows: number;
+  rejectedRows: number;
+  rejections: { rowNumber: number; values: string[]; reason: string }[];
+}
+
+/* ---------------- Bounded AI review ---------------- */
+
+export interface AiSettings {
+  enabled: boolean;
+  maxRequestsPerUserPerDay: number;
+  maxRequestsPerOrgPerDay: number;
+}
+
+export interface AiInteraction {
+  id: string;
+  organisation_id: string;
+  control_id: string;
+  review_id: string | null;
+  requested_by: string;
+  requested_at: string;
+  model: string;
+  prompt_token_count: number;
+  completion_token_count: number;
+  response_type: 'cited_assessment' | 'insufficient_evidence' | 'rate_limited' | 'error';
+  citations_present: boolean;
+  error_code: string | null;
+}
+
+export type AiReviewResult =
+  | { type: 'cited_assessment'; assessment: string }
+  | { type: 'insufficient_evidence'; message: string };

@@ -28,6 +28,96 @@ deletion) treated as first-class deliverables.
 - **Audit log** — every state change is recorded with UTC timestamp, user ID,
   action and control ID. IDs only, never content. Append-only, enforced by a
   database trigger; read-only to every user including admins.
+- **CSV import with provenance** — admins and managers bulk-import controls
+  from a CSV with saved column-mapping profiles, a validation dry run, and an
+  append-only record of every row's outcome. See
+  [CSV import](#csv-import-with-provenance).
+- **Bounded AI review** — managers can request an AI assessment of the
+  evidence submitted for a control, strictly limited to that one evidence
+  note, with citations validated in the application layer. Disabled by
+  default per organisation. See [Bounded AI review](#bounded-ai-review).
+
+## CSV import with provenance
+
+Admins and managers can bulk-import compliance controls from a CSV file
+(`Import` in the sidebar). The flow is deliberately staged:
+
+1. **Upload** — the file (max 5MB, `text/csv` only, MIME-checked server-side)
+   is parsed in memory. The response is the detected headers plus the first
+   five rows as a preview. The file is never written to disk or stored; only
+   its SHA-256 checksum is ever persisted.
+2. **Map** — CSV columns are mapped to control fields: `name` (required),
+   `description`, `category`, `due_date` (optional). Mappings can be saved as
+   named, organisation-scoped profiles and reused (admins and managers create
+   and use profiles; only admins delete them).
+3. **Dry run** — every row is validated: name present and ≤ 255 characters;
+   `due_date`, when present, a real future `YYYY-MM-DD` date. The summary
+   lists each rejected row with its number, original values and a specific
+   reason. Nothing is written.
+4. **Confirm** — a separate request that re-submits the file and re-validates
+   every row server-side (a client claim that "these rows passed" is ignored
+   — there is no server-side draft state to tamper with). Accepted rows
+   become controls; every row's outcome is recorded.
+5. **History** — all runs for the organisation, each expandable to row-level
+   results.
+
+The provenance record per run: UTC timestamp, user ID, organisation ID, the
+file's SHA-256 checksum, total/accepted/rejected counts, and the profile used
+(if any). Per row: row number, the SHA-256 of the raw row values joined by
+comma, accepted/rejected status, rejection reason, and the created control ID
+for accepted rows. `csv_import_runs` and `csv_import_row_results` are
+append-only, enforced by database triggers.
+
+**Verifying a row checksum** — take the original CSV row's cell values, join
+them with commas, and hash:
+
+```bash
+node -e "console.log(require('crypto').createHash('sha256')
+  .update(['Access review','Quarterly review','Security','2027-01-15'].join(','))
+  .digest('hex'))"
+```
+
+Compare against `row_checksum` in the run's row results.
+
+RBAC: upload/map/dry-run/confirm and history — admin and manager; employees
+have no access to any import endpoint. Profile deletion — admin only.
+
+## Bounded AI review
+
+Managers can request an AI assessment of the evidence submitted for a control
+(the control detail page). The trust boundary is enforced at the data layer:
+
+- **Disabled by default.** Two switches must both be on: the deployment flag
+  (`AI_FEATURE_ENABLED`) and the per-organisation toggle, which only an admin
+  can enable (`AI review` in the sidebar). The org flag is checked in the
+  repository before any prompt is constructed.
+- **Bounded context.** The prompt contains a fixed system message and exactly
+  one user message: the evidence note for that control's review. No control
+  name, organisation, user names, other controls, or prior interactions. The
+  evidence is fetched from the database using the session's organisation ID —
+  the endpoint does not accept evidence text in the request body, so a
+  manipulated payload cannot inject content into the prompt.
+- **Citation validation, in code.** The model must quote the evidence
+  verbatim. The application extracts quoted phrases from the response and
+  checks each against the evidence; a response with no valid citation — or
+  containing `INSUFFICIENT_EVIDENCE` — is returned as an explicit
+  insufficient-evidence result. The model is never trusted to have cited
+  anything.
+- **Database-backed rate limits.** Per-user (default 10/day) and per-org
+  (default 50/day) limits, admin-configurable, counted from the
+  `ai_interactions` table with a 24-hour sliding window — they survive server
+  restarts. Exceeding either returns 429.
+- **Metadata-only logging.** Every interaction appends a row (append-only,
+  database trigger): who, when, control and review IDs, model, token counts,
+  the validated response type (`cited_assessment` / `insufficient_evidence` /
+  `rate_limited` / `error`) and whether citations were present. The evidence
+  text, prompt, and raw model response are never stored and never logged.
+  Upstream failures map to 503 with an `error_code` (`timeout`,
+  `upstream_rate_limited`) in the interaction record.
+
+RBAC: requesting a review — manager only. Enabling the feature, configuring
+limits, and viewing the interaction history — admin only. Employees have no
+access.
 
 ## Architecture
 
@@ -100,6 +190,27 @@ Each of these is implemented in code you can read, not just claimed:
   admin-only `/api/admin/diagnostics` with pool stats and uptime.
 - **Generic production errors** — stack traces are logged internally and
   never sent to clients in production. (`src/middleware/errorHandler.ts`)
+- **Stateless, re-validated import confirmation** — the CSV dry run stores
+  nothing server-side; the confirm endpoint re-validates every row from the
+  re-submitted file and ignores any client-supplied validation results. A
+  request naming a different organisation is rejected with 403.
+  (`src/routes/imports.ts`, verified in
+  `tests/integration/csvImport.test.ts`)
+- **Uploads processed in memory, checksums only** — the CSV is size-capped
+  (5MB) and MIME-checked before parsing, never written to disk or database;
+  provenance is SHA-256 checksums (file and per-row) in append-only tables
+  enforced by triggers. (`migrations/0004_csv-import.js`)
+- **AI trust boundary at the data layer** — the AI feature flag and both
+  rate limits are checked against the database (they survive restarts); the
+  prompt is bounded to a single evidence note fetched server-side; model
+  responses are citation-validated in application code; the `ai_interactions`
+  table is metadata-only and append-only.
+  (`src/repositories/aiFeature.ts`, `src/lib/aiReview.ts`,
+  `migrations/0005_ai-review.js`, verified in
+  `tests/integration/aiReview.test.ts`)
+- **Fail-closed AI configuration** — with `AI_FEATURE_ENABLED=true` and no
+  `OPENAI_API_KEY`, the server names the missing variable and exits 1; the
+  key is never logged. (`src/config.ts`)
 
 ## Running locally
 
@@ -133,6 +244,20 @@ npm run dev
 
 Or run the whole backend stack containerised: `docker compose up --build`.
 
+### Environment variables
+
+| Variable                | Required                          | Default       | Description                                                    |
+| ----------------------- | --------------------------------- | ------------- | -------------------------------------------------------------- |
+| `DATABASE_URL`          | yes                               | —             | PostgreSQL connection string                                   |
+| `SESSION_SECRET`        | yes                               | —             | Session signing secret, ≥ 32 characters                        |
+| `NODE_ENV`              | no                                | `development` | `development` / `production` / `test`                          |
+| `FRONTEND_URL`          | in production                     | dev localhost | Frontend origin for CORS                                       |
+| `PORT`                  | no                                | `3000`        | API listen port                                                |
+| `AI_FEATURE_ENABLED`    | no                                | `false`       | Deployment-level AI review switch (`true`/`false`)             |
+| `OPENAI_API_KEY`        | when `AI_FEATURE_ENABLED=true`    | —             | OpenAI API key; startup exits 1 if missing while AI is enabled |
+| `OPENAI_MODEL`          | no                                | `gpt-4o-mini` | Model used for AI evidence review                              |
+| `AI_REQUEST_TIMEOUT_MS` | no                                | `30000`       | Per-call OpenAI timeout in milliseconds                        |
+
 ## Test suite
 
 ```bash
@@ -148,8 +273,17 @@ npm run test:integration --workspace=packages/backend
 Integration coverage includes: registration/login (wrong password, unknown
 user, rate limiting), session expiry and server-side logout, CSRF rejection,
 cross-organisation isolation, role boundaries, audit-log immutability at the
-database level, and a full backup → tamper/restore cycle. Tests run against a
-dedicated test database, never the development one.
+database level, and a full backup → tamper/restore cycle. The CSV import
+suite covers the full upload → dry run → confirm flow, per-row rejection
+reasons, checksum verification, server-side re-validation of manipulated
+confirmation payloads, size (413) and type (415) rejection, cross-tenant
+profile and history isolation, and database-level append-only enforcement.
+The AI review suite covers the disabled-by-default flag, role boundaries,
+prompt boundedness, citation validation, database-backed rate limits (that
+survive an app restart), timeout and upstream-429 handling, and append-only
+`ai_interactions` — all against an injected fake AI client; tests never call
+OpenAI. Tests run against a dedicated test database, never the development
+one.
 
 ## Backup, restore, organisation deletion
 
@@ -183,6 +317,13 @@ Demo organisation (Acme Legal LLP) accounts — **demo environment only**:
 | Manager  | manager@demo.sentinel.app   | `SentinelDemo!2026` |
 | Employee | employee@demo.sentinel.app  | `SentinelDemo!2026` |
 
+The seeded demo organisation includes two saved import mapping profiles, one
+completed import run with mixed accepted and rejected rows (processed through
+the real validation pipeline, so the stored checksums verify), and the AI
+review feature enabled. AI review requests only reach OpenAI if the
+deployment sets `AI_FEATURE_ENABLED=true` with a real `OPENAI_API_KEY`;
+nothing at seed time calls any API.
+
 ## Deployment
 
 **Railway (backend + PostgreSQL)**
@@ -192,7 +333,9 @@ Demo organisation (Acme Legal LLP) accounts — **demo environment only**:
    `packages/backend/Dockerfile` (build context: repo root).
 3. Environment variables: `DATABASE_URL` (from the Railway Postgres service),
    `SESSION_SECRET` (≥ 32 random characters), `NODE_ENV=production`,
-   `FRONTEND_URL` (the Vercel URL).
+   `FRONTEND_URL` (the Vercel URL). To enable AI review, additionally set
+   `AI_FEATURE_ENABLED=true` and `OPENAI_API_KEY` (see
+   [environment variables](#environment-variables)).
 4. Health check path: `/health`. Migrations run automatically on boot.
 5. Seed the demo org once: `railway run npm run seed` (from
    `packages/backend`).

@@ -9,13 +9,13 @@ import { Queryable, ControlRow, ControlStatus } from './types';
 export async function createControl(
   db: Queryable,
   organisationId: string,
-  input: { name: string; description: string }
+  input: { name: string; description: string; category?: string | null; dueDate?: string | null }
 ): Promise<ControlRow> {
   const result = await db.query<ControlRow>(
-    `INSERT INTO controls (organisation_id, name, description)
-     VALUES ($1, $2, $3)
+    `INSERT INTO controls (organisation_id, name, description, category, due_date)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
-    [organisationId, input.name, input.description]
+    [organisationId, input.name, input.description, input.category ?? null, input.dueDate ?? null]
   );
   return result.rows[0]!;
 }

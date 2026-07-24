@@ -39,6 +39,11 @@ export const BACKUP_TABLES = [
   'assignments',
   'invitations',
   'audit_log',
+  'csv_import_profiles',
+  'csv_import_runs',
+  'csv_import_row_results',
+  'ai_feature_settings',
+  'ai_interactions',
 ] as const;
 
 export async function latestSchemaVersion(pool: Pool): Promise<string> {

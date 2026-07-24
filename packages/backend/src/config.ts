@@ -4,6 +4,12 @@ export interface Config {
   nodeEnv: 'development' | 'production' | 'test';
   frontendUrl: string;
   port: number;
+  /** Deployment-level AI switch. Even when true, each organisation must be
+   * enabled individually by an admin (ai_feature_settings). */
+  aiFeatureEnabled: boolean;
+  openaiApiKey: string | null;
+  openaiModel: string;
+  aiRequestTimeoutMs: number;
 }
 
 export class ConfigError extends Error {}
@@ -33,6 +39,17 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   if (nodeEnv === 'production' && !env.FRONTEND_URL) missing.push('FRONTEND_URL');
 
+  const aiFeatureEnabledRaw = env.AI_FEATURE_ENABLED ?? 'false';
+  if (aiFeatureEnabledRaw !== 'true' && aiFeatureEnabledRaw !== 'false') {
+    throw new ConfigError(`AI_FEATURE_ENABLED must be "true" or "false" (got "${aiFeatureEnabledRaw}")`);
+  }
+  const aiFeatureEnabled = aiFeatureEnabledRaw === 'true';
+
+  // Fail closed at startup, not on first request: an AI-enabled deployment
+  // without a key must never boot.
+  const openaiApiKey = env.OPENAI_API_KEY?.trim() || null;
+  if (aiFeatureEnabled && !openaiApiKey) missing.push('OPENAI_API_KEY');
+
   if (missing.length > 0) {
     throw new ConfigError(`Missing required environment variable(s): ${missing.join(', ')}`);
   }
@@ -49,11 +66,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigError('PORT must be a valid TCP port number');
   }
 
+  const aiRequestTimeoutMs = env.AI_REQUEST_TIMEOUT_MS ? Number(env.AI_REQUEST_TIMEOUT_MS) : 30000;
+  if (!Number.isInteger(aiRequestTimeoutMs) || aiRequestTimeoutMs <= 0) {
+    throw new ConfigError('AI_REQUEST_TIMEOUT_MS must be a positive integer (milliseconds)');
+  }
+
   return {
     databaseUrl: databaseUrl!,
     sessionSecret: sessionSecret!,
     nodeEnv,
     frontendUrl: env.FRONTEND_URL ?? 'http://localhost:5173',
     port,
+    aiFeatureEnabled,
+    openaiApiKey,
+    openaiModel: env.OPENAI_MODEL?.trim() || 'gpt-4o-mini',
+    aiRequestTimeoutMs,
   };
 }

@@ -1,13 +1,27 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, ListChecks, LogOut, ScrollText, ShieldCheck, Users } from 'lucide-react';
+import {
+  Bot,
+  LayoutDashboard,
+  ListChecks,
+  LogOut,
+  ScrollText,
+  ShieldCheck,
+  Upload,
+  Users,
+} from 'lucide-react';
 import { useAuth } from '../auth';
+import { Role } from '../types';
 import { initials } from '../lib/format';
 
+const ALL_ROLES: Role[] = ['admin', 'manager', 'employee'];
+
 const NAV_ITEMS = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, adminOnly: false },
-  { to: '/controls', label: 'Controls', icon: ListChecks, end: false, adminOnly: false },
-  { to: '/audit', label: 'Audit log', icon: ScrollText, end: false, adminOnly: false },
-  { to: '/team', label: 'Team', icon: Users, end: false, adminOnly: true },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, roles: ALL_ROLES },
+  { to: '/controls', label: 'Controls', icon: ListChecks, end: false, roles: ALL_ROLES },
+  { to: '/imports', label: 'Import', icon: Upload, end: false, roles: ['admin', 'manager'] as Role[] },
+  { to: '/audit', label: 'Audit log', icon: ScrollText, end: false, roles: ALL_ROLES },
+  { to: '/team', label: 'Team', icon: Users, end: false, roles: ['admin'] as Role[] },
+  { to: '/ai-settings', label: 'AI review', icon: Bot, end: false, roles: ['admin'] as Role[] },
 ];
 
 function navClass({ isActive }: { isActive: boolean }) {
@@ -23,7 +37,7 @@ export function Layout() {
   const navigate = useNavigate();
   if (!user) return null;
 
-  const items = NAV_ITEMS.filter((item) => !item.adminOnly || user.role === 'admin');
+  const items = NAV_ITEMS.filter((item) => item.roles.includes(user.role));
 
   return (
     <div className="flex min-h-screen">

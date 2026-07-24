@@ -37,7 +37,7 @@ async function ensureCsrfToken(): Promise<string> {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   body?: unknown;
 }
 
@@ -54,6 +54,25 @@ export async function api<T>(path: string, options: RequestOptions = {}): Promis
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
 
+  const data = (await response.json().catch(() => ({}))) as { error?: string };
+  if (!response.ok) {
+    throw new ApiError(response.status, data.error ?? `Request failed (${response.status})`);
+  }
+  return data as T;
+}
+
+/**
+ * Multipart upload (CSV import). The browser sets the multipart boundary
+ * itself, so no Content-Type header here; the CSRF token is echoed exactly
+ * like JSON mutations.
+ */
+export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'x-csrf-token': await ensureCsrfToken() },
+    credentials: 'include',
+    body: form,
+  });
   const data = (await response.json().catch(() => ({}))) as { error?: string };
   if (!response.ok) {
     throw new ApiError(response.status, data.error ?? `Request failed (${response.status})`);

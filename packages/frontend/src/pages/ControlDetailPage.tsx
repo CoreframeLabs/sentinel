@@ -1,10 +1,10 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { ArrowLeft, ClipboardList, UserPlus } from 'lucide-react';
+import { ArrowLeft, ClipboardList, Sparkles, UserPlus } from 'lucide-react';
 import { api, ApiError } from '../api';
 import { useAuth } from '../auth';
 import { useToast } from '../components/toast';
-import { Assignment, Control, ControlStatus, OrgMember } from '../types';
+import { AiReviewResult, Assignment, Control, ControlStatus, OrgMember } from '../types';
 import {
   Button,
   Card,
@@ -170,6 +170,13 @@ export function ControlDetailPage() {
         </Card>
       ) : null}
 
+      {user?.role === 'manager' ? (
+        <AiReviewCard
+          controlId={control.id}
+          hasEvidence={assignments.some((a) => a.evidence_note)}
+        />
+      ) : null}
+
       <Card title={`Assignments (${assignments.length})`}>
         {assignments.length === 0 ? (
           <EmptyState
@@ -218,6 +225,69 @@ export function ControlDetailPage() {
         )}
       </Card>
     </div>
+  );
+}
+
+/**
+ * Manager-only bounded AI review. The request carries only the control ID —
+ * the server fetches the evidence itself and validates that any assessment
+ * cites the evidence verbatim before returning it. Nothing shown here is
+ * ever stored.
+ */
+function AiReviewCard({ controlId, hasEvidence }: { controlId: string; hasEvidence: boolean }) {
+  const [result, setResult] = useState<AiReviewResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const requestReview = async () => {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await api<{ result: AiReviewResult }>(`/api/controls/${controlId}/ai-review`, {
+        method: 'POST',
+      });
+      setResult(res.result);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Something went wrong');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card
+      title="AI evidence review"
+      action={
+        <Button size="sm" disabled={busy || !hasEvidence} onClick={() => void requestReview()}>
+          <Sparkles className="h-4 w-4" /> {busy ? 'Reviewing…' : 'Request AI review'}
+        </Button>
+      }
+    >
+      <p className="text-xs text-slate-500">
+        The AI reads only the submitted evidence note for this control — no other context — and
+        must quote it verbatim or report insufficient evidence. Only metadata about the request is
+        logged, never the content.
+      </p>
+      {!hasEvidence ? (
+        <p className="mt-3 text-sm text-slate-500">No evidence has been submitted yet.</p>
+      ) : null}
+      {error ? (
+        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {error}
+        </p>
+      ) : null}
+      {result?.type === 'cited_assessment' ? (
+        <blockquote className="mt-3 rounded-lg border-l-2 border-indigo-300 bg-indigo-50/60 px-3 py-2 text-sm text-slate-800">
+          {result.assessment}
+        </blockquote>
+      ) : null}
+      {result?.type === 'insufficient_evidence' ? (
+        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+          {result.message}
+        </p>
+      ) : null}
+    </Card>
   );
 }
 

@@ -9,6 +9,8 @@ import { ControlsPage } from './pages/ControlsPage';
 import { ControlDetailPage } from './pages/ControlDetailPage';
 import { AuditPage } from './pages/AuditPage';
 import { TeamPage } from './pages/TeamPage';
+import { ImportPage } from './pages/ImportPage';
+import { AiSettingsPage } from './pages/AiSettingsPage';
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
@@ -20,6 +22,12 @@ function RequireAuth({ children }: { children: ReactNode }) {
 function RequireAdmin({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+function RequireManagerOrAdmin({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  if (user?.role !== 'admin' && user?.role !== 'manager') return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -42,10 +50,26 @@ export function App() {
             <Route path="/controls/:id" element={<ControlDetailPage />} />
             <Route path="/audit" element={<AuditPage />} />
             <Route
+              path="/imports"
+              element={
+                <RequireManagerOrAdmin>
+                  <ImportPage />
+                </RequireManagerOrAdmin>
+              }
+            />
+            <Route
               path="/team"
               element={
                 <RequireAdmin>
                   <TeamPage />
+                </RequireAdmin>
+              }
+            />
+            <Route
+              path="/ai-settings"
+              element={
+                <RequireAdmin>
+                  <AiSettingsPage />
                 </RequireAdmin>
               }
             />

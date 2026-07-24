@@ -5,6 +5,10 @@ import * as users from '../src/repositories/users';
 import * as controls from '../src/repositories/controls';
 import * as assignments from '../src/repositories/assignments';
 import * as auditLog from '../src/repositories/auditLog';
+import * as importProfiles from '../src/repositories/csvImportProfiles';
+import * as csvImports from '../src/repositories/csvImports';
+import * as aiFeature from '../src/repositories/aiFeature';
+import { fileChecksum, parseCsv, validateRows } from '../src/lib/csvImport';
 import { createScriptPool, logLine } from './lib';
 
 /**
@@ -38,6 +42,29 @@ const DEMO_CONTROLS: { name: string; description: string; status: 'pending' | 'i
 function daysFromNow(days: number): string {
   const d = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   return d.toISOString().slice(0, 10);
+}
+
+const DEMO_IMPORT_MAPPING = {
+  name: 'Control Name',
+  description: 'Details',
+  category: 'Category',
+  due_date: 'Due Date',
+};
+
+/** Mixed demo CSV: three valid rows, one missing name, one past due date.
+ * Processed through the real import pipeline so checksums are genuine. */
+function demoImportCsv(): Buffer {
+  return Buffer.from(
+    [
+      'Control Name,Details,Category,Due Date',
+      `Regulatory horizon scan,Quarterly review of upcoming regulation,Regulatory,${daysFromNow(45)}`,
+      `Vendor risk assessments refreshed,Annual reassessment of critical vendors,Third party,${daysFromNow(90)}`,
+      ',Row without a control name,Operations,',
+      'Password policy attestation,All staff attest to the password policy,Security,2020-01-01',
+      'Incident response contact tree verified,,Security,',
+    ].join('\n'),
+    'utf8'
+  );
 }
 
 async function main(): Promise<void> {
@@ -150,11 +177,86 @@ async function main(): Promise<void> {
         }
       }
 
+      // Two reusable mapping profiles.
+      const standardProfile = await importProfiles.createProfile(tx, org.id, {
+        name: 'Standard control register',
+        columnMapping: DEMO_IMPORT_MAPPING,
+        createdBy: adminUser.id,
+      });
+      await importProfiles.createProfile(tx, org.id, {
+        name: 'Minimal (name + description)',
+        columnMapping: { name: 'Control Name', description: 'Details' },
+        createdBy: managerUser.id,
+      });
+
+      // One completed import run with mixed accepted and rejected rows,
+      // processed through the real validation pipeline.
+      const csv = demoImportCsv();
+      const summary = validateRows(parseCsv(csv), DEMO_IMPORT_MAPPING);
+      const importRun = await csvImports.createImportRun(tx, org.id, {
+        profileId: standardProfile.id,
+        filenameChecksum: fileChecksum(csv),
+        totalRows: summary.totalRows,
+        acceptedRows: summary.acceptedRows,
+        rejectedRows: summary.rejectedRows,
+        createdBy: managerUser.id,
+      });
+      await auditLog.appendAuditEntry(tx, org.id, {
+        userId: managerUser.id,
+        action: 'import_run_created',
+        controlId: null,
+        importRunId: importRun.id,
+      });
+      for (const row of summary.rows) {
+        let controlId: string | null = null;
+        if (row.status === 'accepted' && row.control) {
+          const control = await controls.createControl(tx, org.id, {
+            name: row.control.name,
+            description: row.control.description,
+            category: row.control.category,
+            dueDate: row.control.dueDate,
+          });
+          controlId = control.id;
+          await auditLog.appendAuditEntry(tx, org.id, {
+            userId: managerUser.id,
+            action: 'control_created_by_import',
+            controlId,
+            importRunId: importRun.id,
+          });
+        }
+        await csvImports.appendRowResult(tx, {
+          importRunId: importRun.id,
+          rowNumber: row.rowNumber,
+          rowChecksum: row.checksum,
+          status: row.status,
+          rejectionReason: row.rejectionReason,
+          controlId,
+        });
+      }
+
+      // AI review enabled for the demo organisation. No API call happens at
+      // seed time — reviews use a stubbed client unless a real
+      // OPENAI_API_KEY is configured on the deployment.
+      await aiFeature.upsertSettings(tx, org.id, {
+        enabled: true,
+        maxRequestsPerUserPerDay: 10,
+        maxRequestsPerOrgPerDay: 50,
+        actorUserId: adminUser.id,
+      });
+      await auditLog.appendAuditEntry(tx, org.id, {
+        userId: adminUser.id,
+        action: 'ai_feature_enabled',
+        controlId: null,
+      });
+
       logLine('info', 'seed_completed', {
         org_id: org.id,
         users: DEMO_USERS.length,
         controls: createdControls.length,
         assignments: assignmentPlans.length,
+        import_runs: 1,
+        import_rows: summary.totalRows,
+        ai_enabled: true,
       });
     });
   } catch (err) {

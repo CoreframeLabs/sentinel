@@ -18,8 +18,16 @@ import { auditRouter } from './routes/audit';
 import { invitationsRouter } from './routes/invitations';
 import { adminRouter } from './routes/admin';
 import { usersRouter } from './routes/users';
+import { importsRouter } from './routes/imports';
+import { aiReviewRouter } from './routes/aiReview';
+import { AiReviewClient, createOpenAiReviewClient } from './lib/aiClient';
 
-export function buildApp(config: Config, pool: Pool, log: Logger): Express {
+export interface AppDeps {
+  /** Injectable AI client so tests never call the real OpenAI API. */
+  aiClient?: AiReviewClient;
+}
+
+export function buildApp(config: Config, pool: Pool, log: Logger, deps: AppDeps = {}): Express {
   const app = express();
 
   // Railway terminates TLS at its proxy; trust exactly one hop so req.ip and
@@ -87,6 +95,11 @@ export function buildApp(config: Config, pool: Pool, log: Logger): Express {
   app.use('/api', invitationsRouter(pool, log));
   app.use('/api', adminRouter(pool));
   app.use('/api', usersRouter(pool));
+  app.use('/api', importsRouter(pool, log));
+
+  const aiClient =
+    deps.aiClient ?? (config.aiFeatureEnabled ? createOpenAiReviewClient(config) : null);
+  app.use('/api', aiReviewRouter(config, pool, log, aiClient));
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Not found' });

@@ -78,6 +78,27 @@ export async function listAssignmentsInState(
   return result.rows;
 }
 
+/**
+ * The review record an AI review reads from: the most recently updated
+ * assignment for the control that carries an evidence note. Organisation-
+ * scoped — a control from another organisation yields null, indistinguishable
+ * from "no evidence".
+ */
+export async function findLatestEvidenceForControl(
+  db: Queryable,
+  organisationId: string,
+  controlId: string
+): Promise<AssignmentRow | null> {
+  const result = await db.query<AssignmentRow>(
+    `SELECT * FROM assignments
+     WHERE organisation_id = $1 AND control_id = $2 AND evidence_note IS NOT NULL
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    [organisationId, controlId]
+  );
+  return result.rows[0] ?? null;
+}
+
 /** Sets the evidence note. Only valid for the assignee while not yet accepted. */
 export async function setEvidenceNote(
   db: Queryable,

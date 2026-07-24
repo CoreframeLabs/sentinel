@@ -4,7 +4,7 @@ import path from 'path';
 import { Express } from 'express';
 import { Pool } from 'pg';
 import request from 'supertest';
-import { buildApp } from '../src/app';
+import { buildApp, AppDeps } from '../src/app';
 import { Config } from '../src/config';
 import { logger } from '../src/logger';
 
@@ -23,6 +23,10 @@ export const TEST_CONFIG: Config = {
   nodeEnv: 'test',
   frontendUrl: 'http://localhost:5173',
   port: 0,
+  aiFeatureEnabled: false,
+  openaiApiKey: null,
+  openaiModel: 'gpt-4o-mini',
+  aiRequestTimeoutMs: 30000,
 };
 
 export interface TestContext {
@@ -41,7 +45,12 @@ const MIGRATE_BIN = [
   path.join(BACKEND_ROOT, 'node_modules', '.bin', 'node-pg-migrate'),
 ].find(fs.existsSync)!;
 
-export async function createTestContext(): Promise<TestContext> {
+export interface TestContextOptions {
+  config?: Partial<Config>;
+  deps?: AppDeps;
+}
+
+export async function createTestContext(options: TestContextOptions = {}): Promise<TestContext> {
   execFileSync(MIGRATE_BIN, ['up', '-m', path.join(BACKEND_ROOT, 'migrations')], {
     env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
     stdio: 'pipe',
@@ -49,7 +58,7 @@ export async function createTestContext(): Promise<TestContext> {
 
   const pool = new Pool({ connectionString: TEST_DATABASE_URL, max: 5 });
   const silent = logger.child({}, { level: 'silent' });
-  const app = buildApp(TEST_CONFIG, pool, silent);
+  const app = buildApp({ ...TEST_CONFIG, ...options.config }, pool, silent, options.deps);
   return {
     app,
     pool,
@@ -60,10 +69,12 @@ export async function createTestContext(): Promise<TestContext> {
 }
 
 /** Truncates all application tables (TRUNCATE does not fire row triggers, so
- * the audit append-only trigger does not block test cleanup). */
+ * the append-only triggers do not block test cleanup). */
 export async function resetDatabase(pool: Pool): Promise<void> {
   await pool.query(
-    `TRUNCATE organisations, users, controls, assignments, invitations, audit_log, "session"
+    `TRUNCATE organisations, users, controls, assignments, invitations, audit_log,
+       csv_import_profiles, csv_import_runs, csv_import_row_results,
+       ai_feature_settings, ai_interactions, "session"
      RESTART IDENTITY CASCADE`
   );
 }
@@ -82,6 +93,7 @@ export interface RegisteredOrg {
   csrf: string;
   userId: string;
   organisationId: string;
+  email: string;
 }
 
 let orgCounter = 0;
@@ -95,12 +107,13 @@ export async function registerOrganisation(
   orgCounter += 1;
   const agent = request.agent(app);
   const csrf = await getCsrfToken(agent);
+  const email = `admin-${Date.now()}-${orgCounter}@example.test`;
   const res = await agent
     .post('/api/auth/register')
     .set('x-csrf-token', csrf)
     .send({
       organisationName: name ?? `Test Org ${orgCounter}`,
-      email: `admin-${Date.now()}-${orgCounter}@example.test`,
+      email,
       password: 'correct-horse-battery',
       displayName: 'Test Admin',
     })
@@ -110,6 +123,7 @@ export async function registerOrganisation(
     csrf,
     userId: res.body.user.id,
     organisationId: res.body.user.organisationId,
+    email,
   };
 }
 
@@ -144,5 +158,6 @@ export async function addUserToOrg(
     csrf,
     userId: res.body.user.id,
     organisationId: res.body.user.organisationId,
+    email,
   };
 }

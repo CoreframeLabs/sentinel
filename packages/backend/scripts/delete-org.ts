@@ -37,7 +37,17 @@ async function main(): Promise<void> {
     }
 
     const counts: Record<string, number> = {};
-    for (const table of ['users', 'controls', 'assignments', 'invitations', 'audit_log']) {
+    for (const table of [
+      'users',
+      'controls',
+      'assignments',
+      'invitations',
+      'audit_log',
+      'csv_import_profiles',
+      'csv_import_runs',
+      'ai_feature_settings',
+      'ai_interactions',
+    ]) {
       const result = await client.query(
         `SELECT count(*)::int AS n FROM ${table} WHERE organisation_id = $1`,
         [orgId]
@@ -62,6 +72,10 @@ async function main(): Promise<void> {
 
     await client.query('BEGIN');
     await client.query(`SET LOCAL sentinel.allow_audit_delete = 'on'`);
+    // Same escape hatch for the append-only provenance tables (CSV import
+    // runs/results, AI interactions): this operator transaction is the only
+    // code path that sets it.
+    await client.query(`SET LOCAL sentinel.allow_provenance_delete = 'on'`);
     await client.query(
       `INSERT INTO audit_log (organisation_id, user_id, action, control_id)
        VALUES ($1, NULL, 'organisation_deleted', NULL)`,
@@ -69,6 +83,17 @@ async function main(): Promise<void> {
     );
     // Children before parents, respecting foreign keys.
     await client.query(`DELETE FROM "session" WHERE sess->>'organisationId' = $1`, [orgId]);
+    await client.query('DELETE FROM ai_interactions WHERE organisation_id = $1', [orgId]);
+    await client.query('DELETE FROM ai_feature_settings WHERE organisation_id = $1', [orgId]);
+    // Row results carry no organisation_id of their own; they are scoped
+    // through their run.
+    await client.query(
+      `DELETE FROM csv_import_row_results
+       WHERE import_run_id IN (SELECT id FROM csv_import_runs WHERE organisation_id = $1)`,
+      [orgId]
+    );
+    await client.query('DELETE FROM csv_import_runs WHERE organisation_id = $1', [orgId]);
+    await client.query('DELETE FROM csv_import_profiles WHERE organisation_id = $1', [orgId]);
     await client.query('DELETE FROM assignments WHERE organisation_id = $1', [orgId]);
     await client.query('DELETE FROM invitations WHERE organisation_id = $1', [orgId]);
     await client.query('DELETE FROM controls WHERE organisation_id = $1', [orgId]);

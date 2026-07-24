@@ -12,13 +12,18 @@ import { Queryable, AuditLogRow } from './types';
 export async function appendAuditEntry(
   db: Queryable,
   organisationId: string,
-  entry: { userId: string | null; action: string; controlId: string | null }
+  entry: {
+    userId: string | null;
+    action: string;
+    controlId: string | null;
+    importRunId?: string | null;
+  }
 ): Promise<AuditLogRow> {
   const result = await db.query<AuditLogRow>(
-    `INSERT INTO audit_log (organisation_id, user_id, action, control_id)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO audit_log (organisation_id, user_id, action, control_id, import_run_id)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
-    [organisationId, entry.userId, entry.action, entry.controlId]
+    [organisationId, entry.userId, entry.action, entry.controlId, entry.importRunId ?? null]
   );
   return result.rows[0]!;
 }
