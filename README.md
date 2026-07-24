@@ -112,11 +112,12 @@ docker compose up -d postgres postgres-test
 # 2. Install dependencies
 npm ci
 
-# 3. Configure the backend
+# 3. Configure the backend (.env is auto-loaded in development)
 cd packages/backend
 cp .env.example .env
 # set DATABASE_URL=postgres://sentinel:sentinel_local_dev@localhost:5432/sentinel
-# and a SESSION_SECRET of at least 32 characters
+# and a SESSION_SECRET of at least 32 characters, e.g. from:
+#   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 
 # 4. Migrate and seed demo data
 npm run migrate:up

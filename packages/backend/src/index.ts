@@ -1,3 +1,7 @@
+// Loads a local .env file in development; a no-op when the file is absent
+// (production injects real environment variables). Values already present in
+// the environment always win — dotenv never overrides.
+import 'dotenv/config';
 import { loadConfig, ConfigError } from './config';
 import { createPool, healthCheck } from './db';
 import { logger } from './logger';
