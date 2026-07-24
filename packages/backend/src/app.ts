@@ -94,7 +94,7 @@ export function buildApp(config: Config, pool: Pool, log: Logger, deps: AppDeps 
   app.use('/api', auditRouter(pool));
   app.use('/api', invitationsRouter(pool, log));
   app.use('/api', adminRouter(pool));
-  app.use('/api', usersRouter(pool));
+  app.use('/api', usersRouter(pool, log));
   app.use('/api', importsRouter(pool, log));
 
   const aiClient =

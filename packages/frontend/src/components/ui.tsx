@@ -1,5 +1,5 @@
-import { ButtonHTMLAttributes, ReactNode, useEffect } from 'react';
-import { LucideIcon, X } from 'lucide-react';
+import { ButtonHTMLAttributes, ReactNode, useEffect, useRef, useState } from 'react';
+import { Info, LucideIcon, X } from 'lucide-react';
 import { AssignmentState, ControlStatus } from '../types';
 
 /* ------------------------------------------------------------------ */
@@ -105,17 +105,78 @@ export function DueChip({ dueDate, label }: { dueDate: string; label: string }) 
 }
 
 /* ------------------------------------------------------------------ */
+/* Contextual help                                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Small "i" button that toggles an explanatory popover. Used next to page
+ * and section titles so every screen explains what it is for and how to use
+ * it. Click-toggled (not hover) so it works on touch; closes on outside
+ * click or Escape.
+ */
+export function InfoTip({ title, children }: { title: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <span ref={rootRef} className="relative inline-flex">
+      <button
+        type="button"
+        aria-label={`About: ${title}`}
+        aria-expanded={open}
+        className={`rounded-full p-1 transition-colors ${
+          open ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:bg-slate-100 hover:text-indigo-600'
+        }`}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Info className="h-4 w-4" />
+      </button>
+      {open ? (
+        <div
+          role="note"
+          className="fade-in absolute left-0 top-full z-30 mt-2 w-72 max-w-[calc(100vw-3rem)] rounded-xl border border-slate-200 bg-white p-3.5 shadow-xl"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-600">{title}</p>
+          <div className="mt-1.5 space-y-1.5 text-xs leading-relaxed text-slate-600">{children}</div>
+        </div>
+      ) : null}
+    </span>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Layout primitives                                                   */
 /* ------------------------------------------------------------------ */
 
 export function Card({
   title,
   action,
+  info,
+  infoTitle,
   children,
   className = '',
 }: {
   title?: string;
   action?: ReactNode;
+  /** Optional contextual help shown as an InfoTip beside the title. */
+  info?: ReactNode;
+  infoTitle?: string;
   children: ReactNode;
   className?: string;
 }) {
@@ -126,9 +187,12 @@ export function Card({
       {title || action ? (
         <div className="mb-4 flex items-center justify-between gap-3">
           {title ? (
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              {title}
-            </h2>
+            <span className="inline-flex items-center gap-1.5">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                {title}
+              </h2>
+              {info ? <InfoTip title={infoTitle ?? title}>{info}</InfoTip> : null}
+            </span>
           ) : (
             <span />
           )}
@@ -144,15 +208,23 @@ export function PageHeader({
   title,
   subtitle,
   action,
+  info,
+  infoTitle,
 }: {
   title: string;
   subtitle?: string;
   action?: ReactNode;
+  /** Optional contextual help shown as an InfoTip beside the title. */
+  info?: ReactNode;
+  infoTitle?: string;
 }) {
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">{title}</h1>
+        <span className="inline-flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">{title}</h1>
+          {info ? <InfoTip title={infoTitle ?? title}>{info}</InfoTip> : null}
+        </span>
         {subtitle ? <p className="mt-1 text-sm text-slate-500">{subtitle}</p> : null}
       </div>
       {action}

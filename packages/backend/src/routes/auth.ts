@@ -32,6 +32,7 @@ function publicUser(user: UserRow) {
     displayName: user.display_name,
     role: user.role,
     organisationId: user.organisation_id,
+    tourCompletedAt: user.tour_completed_at,
   };
 }
 

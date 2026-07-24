@@ -67,9 +67,25 @@ export function ControlsPage() {
       <PageHeader
         title="Controls library"
         subtitle={`${controls.length} control${controls.length === 1 ? '' : 's'} in your organisation.`}
+        info={
+          <>
+            <p>
+              A control is one compliance obligation your organisation tracks — e.g. “Access
+              control audit”. Each moves through Pending → In Review → Passed (or Deferred).
+            </p>
+            <p>
+              Open a control to see its assignments and evidence.{' '}
+              {user?.role === 'admin'
+                ? 'As an admin you can create controls here, import them in bulk from CSV via Import, and change statuses directly.'
+                : user?.role === 'manager'
+                  ? 'As a manager you can assign controls to team members with a due date, review submitted evidence, and bulk-import controls via Import.'
+                  : 'Controls are assigned to you by managers; record your evidence from the Dashboard.'}
+            </p>
+          </>
+        }
         action={
           user?.role === 'admin' ? (
-            <Button onClick={() => setShowCreate(true)}>
+            <Button data-tour="new-control" onClick={() => setShowCreate(true)}>
               <Plus className="h-4 w-4" /> New control
             </Button>
           ) : undefined

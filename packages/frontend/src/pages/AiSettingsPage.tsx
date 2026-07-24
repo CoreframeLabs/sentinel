@@ -63,6 +63,22 @@ export function AiSettingsPage() {
       <PageHeader
         title="AI review settings"
         subtitle="Bounded AI review of submitted evidence. Disabled by default; the AI sees only the evidence note for the control under review."
+        infoTitle="How AI review works"
+        info={
+          <>
+            <p>
+              When enabled, managers get a “Request AI review” button on any control with
+              submitted evidence. The AI receives only that one evidence note — no control
+              names, no user names, no other context — and must quote the evidence verbatim.
+              A response without a genuine quote is reported as “insufficient evidence”.
+            </p>
+            <p>
+              Daily limits below cap requests per user and for the whole organisation. Every
+              request is recorded in the history — outcome, model and token counts only; the
+              evidence and the AI&rsquo;s text are never stored.
+            </p>
+          </>
+        }
       />
 
       {!deploymentEnabled ? (

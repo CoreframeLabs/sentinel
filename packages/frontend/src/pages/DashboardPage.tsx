@@ -84,6 +84,19 @@ function EmployeeDashboard({
             ? 'Nothing needs your action right now.'
             : `${open.length} control${open.length === 1 ? '' : 's'} need${open.length === 1 ? 's' : ''} your attention${attention.overdue.length ? ` — ${attention.overdue.length} overdue` : ''}.`
         }
+        info={
+          <>
+            <p>
+              Controls assigned to you appear here with their due dates — overdue ones are
+              flagged. For each: write a note describing the evidence that the control is in
+              place, then submit it for review.
+            </p>
+            <p>
+              A manager accepts or rejects your submission. If rejected, you&rsquo;ll see their
+              reason here; revise your evidence and resubmit.
+            </p>
+          </>
+        }
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -223,6 +236,20 @@ function ManagerDashboard({
             ? 'No submissions waiting for you.'
             : `${queue.length} submission${queue.length === 1 ? '' : 's'} waiting for your decision.`
         }
+        info={
+          <>
+            <p>
+              Evidence your team has submitted for review. Read the note and accept it (the
+              control passes) or reject it with a reason the assignee will see so they can
+              revise and resubmit.
+            </p>
+            <p>
+              To hand out work, open a control from the Controls page and assign it with a due
+              date. On a control with submitted evidence you can also request an AI review for
+              a second opinion — it must quote the evidence or say it&rsquo;s insufficient.
+            </p>
+          </>
+        }
       />
 
       <Card title="Ready for your review">
@@ -310,6 +337,20 @@ function AdminDashboard({
       <PageHeader
         title="Organisation overview"
         subtitle="Compliance posture across your whole team."
+        info={
+          <>
+            <p>
+              The whole organisation at a glance: the share of controls that have passed, how
+              controls are distributed across statuses, open and overdue assignments, and the
+              latest audit activity.
+            </p>
+            <p>
+              Day-to-day work happens elsewhere: define controls in the Controls page or import
+              them from CSV, invite people in Team, and enable AI-assisted evidence review in
+              AI review.
+            </p>
+          </>
+        }
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

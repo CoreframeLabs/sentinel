@@ -42,6 +42,22 @@ export async function findUserById(
   return result.rows[0] ?? null;
 }
 
+/** Records that the user finished (or skipped) the guided tour. Idempotent:
+ * the first completion timestamp is kept. Scoped to the acting user. */
+export async function markTourCompleted(
+  db: Queryable,
+  organisationId: string,
+  id: string
+): Promise<UserRow | null> {
+  const result = await db.query<UserRow>(
+    `UPDATE users SET tour_completed_at = COALESCE(tour_completed_at, now())
+     WHERE organisation_id = $1 AND id = $2
+     RETURNING *`,
+    [organisationId, id]
+  );
+  return result.rows[0] ?? null;
+}
+
 export async function listUsersByOrganisation(
   db: Queryable,
   organisationId: string

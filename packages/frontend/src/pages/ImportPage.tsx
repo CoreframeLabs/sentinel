@@ -149,6 +149,25 @@ export function ImportPage() {
       <PageHeader
         title="Import controls"
         subtitle="Upload a CSV of compliance controls. Every row is validated, and every outcome — accepted or rejected — is recorded with its checksum."
+        infoTitle="How importing works"
+        info={
+          <>
+            <p>
+              Four steps: <strong>1.</strong> Upload a CSV (max 5MB) with a header row.{' '}
+              <strong>2.</strong> Map its columns to control fields — only Name is required —
+              and optionally save the mapping as a profile to reuse next time.{' '}
+              <strong>3.</strong> Run the dry run: nothing is written yet; you see exactly which
+              rows would be accepted and why the rest were rejected. <strong>4.</strong> Confirm
+              to create the accepted controls.
+            </p>
+            <p>
+              Rows are rejected when the name is empty or over 255 characters, or a due date is
+              not a future YYYY-MM-DD date. Rejected rows are never silently dropped — each is
+              recorded with its reason in the history below, alongside checksums that let you
+              prove later what was imported. The file itself is never stored.
+            </p>
+          </>
+        }
       />
 
       {step === 'upload' ? (
@@ -377,7 +396,17 @@ function ImportHistory({ refreshKey, isAdmin }: { refreshKey: string; isAdmin: b
   };
 
   return (
-    <Card title="Import history">
+    <Card
+      title="Import history"
+      info={
+        <p>
+          One entry per confirmed import: when, how many rows were accepted and rejected, and
+          the SHA-256 checksum of the uploaded file. Expand a run to see every row&rsquo;s outcome
+          and rejection reason. This record is append-only — it cannot be edited or deleted,
+          even by admins.
+        </p>
+      }
+    >
       {runs.length === 0 ? (
         <EmptyState
           icon={History}

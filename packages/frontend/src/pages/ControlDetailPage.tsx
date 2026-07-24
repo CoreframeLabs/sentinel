@@ -135,7 +135,16 @@ export function ControlDetailPage() {
       </Card>
 
       {canAssign ? (
-        <Card title="Assign this control">
+        <Card
+          title="Assign this control"
+          info={
+            <p>
+              Pick a team member and a due date. The assignee sees it on their dashboard,
+              records an evidence note, and submits it for review; the control moves to In
+              Review. A control can be assigned to several people.
+            </p>
+          }
+        >
           <form onSubmit={(e) => void assign(e)} className="flex flex-wrap items-end gap-3">
             <label className="min-w-52 flex-1 text-sm">
               <span className="font-medium text-slate-700">Assignee</span>
@@ -177,7 +186,17 @@ export function ControlDetailPage() {
         />
       ) : null}
 
-      <Card title={`Assignments (${assignments.length})`}>
+      <Card
+        title={`Assignments (${assignments.length})`}
+        infoTitle="Assignments"
+        info={
+          <p>
+            Everyone this control is assigned to, with due date, current state and their
+            submitted evidence. Rejected submissions show the reviewer&rsquo;s reason; the
+            assignee can revise and resubmit until the evidence is accepted.
+          </p>
+        }
+      >
         {assignments.length === 0 ? (
           <EmptyState
             icon={ClipboardList}
@@ -258,6 +277,15 @@ function AiReviewCard({ controlId, hasEvidence }: { controlId: string; hasEviden
   return (
     <Card
       title="AI evidence review"
+      info={
+        <p>
+          Asks an AI whether the submitted evidence demonstrates the control is in place. It
+          reads only the evidence note — nothing else about your organisation — and must quote
+          it verbatim; otherwise you get an explicit &ldquo;insufficient evidence&rdquo; answer.
+          Requests are rate-limited per day, and only metadata (never the text) is recorded.
+          Requires an admin to have enabled AI review for your organisation.
+        </p>
+      }
       action={
         <Button size="sm" disabled={busy || !hasEvidence} onClick={() => void requestReview()}>
           <Sparkles className="h-4 w-4" /> {busy ? 'Reviewing…' : 'Request AI review'}

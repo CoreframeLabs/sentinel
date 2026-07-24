@@ -23,6 +23,7 @@ export interface UserRow {
   password_hash: string;
   display_name: string;
   role: Role;
+  tour_completed_at: Date | null;
   created_at: Date;
 }
 

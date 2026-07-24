@@ -8,6 +8,9 @@ export interface User {
   displayName: string;
   role: Role;
   organisationId: string;
+  /** null until the user finishes or skips the guided tour (per user,
+   * stored server-side) — the app auto-starts the tour while null. */
+  tourCompletedAt: string | null;
 }
 
 export interface OrgMember {

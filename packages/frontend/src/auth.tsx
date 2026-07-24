@@ -15,6 +15,9 @@ interface AuthContextValue {
   loading: boolean;
   login(email: string, password: string): Promise<void>;
   logout(): Promise<void>;
+  /** Records tour completion (finish or skip) server-side so it never
+   * auto-starts again for this user, on any device. */
+  markTourSeen(): Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -48,9 +51,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const markTourSeen = useCallback(async () => {
+    // Optimistic: the tour must not reappear even if the network call fails;
+    // the server flag catches up on the next successful call.
+    setUser((u) => (u ? { ...u, tourCompletedAt: u.tourCompletedAt ?? new Date().toISOString() } : u));
+    try {
+      await api('/api/users/me/tour-complete', { method: 'POST' });
+    } catch {
+      // Non-fatal: purely a UX preference.
+    }
+  }, []);
+
   const value = useMemo(
-    () => ({ user, loading, login, logout }),
-    [user, loading, login, logout]
+    () => ({ user, loading, login, logout, markTourSeen }),
+    [user, loading, login, logout, markTourSeen]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

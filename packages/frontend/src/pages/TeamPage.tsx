@@ -85,6 +85,20 @@ export function TeamPage() {
       <PageHeader
         title="Team"
         subtitle={`${members.length} member${members.length === 1 ? '' : 's'} in your organisation.`}
+        info={
+          <>
+            <p>
+              Invite people by email with a role: <strong>Admins</strong> manage controls, the
+              team and settings; <strong>Managers</strong> assign controls, review evidence, run
+              imports and AI reviews; <strong>Employees</strong> record evidence for their
+              assignments.
+            </p>
+            <p>
+              Invitations are single-use links that expire; share each link with its recipient
+              yourself.
+            </p>
+          </>
+        }
         action={
           <Button onClick={() => setShowInvite(true)}>
             <UserPlus className="h-4 w-4" /> Invite member

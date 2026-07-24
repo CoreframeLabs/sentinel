@@ -28,6 +28,14 @@ deletion) treated as first-class deliverables.
 - **Audit log** — every state change is recorded with UTC timestamp, user ID,
   action and control ID. IDs only, never content. Append-only, enforced by a
   database trigger; read-only to every user including admins.
+- **Guided tour & contextual help** — a role-tailored walkthrough (different
+  steps for admins, managers and employees) auto-starts on a user's first
+  login and can be replayed any time from the compass button in the sidebar.
+  "First time" is tracked per user server-side (`users.tour_completed_at`),
+  not per browser, so it follows the user across devices and never re-nags
+  after finishing or skipping. Every page and key section also carries an
+  ⓘ info button explaining what it is for and how to use it, with copy
+  tailored to the viewer's role.
 - **CSV import with provenance** — admins and managers bulk-import controls
   from a CSV with saved column-mapping profiles, a validation dry run, and an
   append-only record of every row's outcome. See

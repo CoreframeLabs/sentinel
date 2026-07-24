@@ -22,6 +22,19 @@ export function AuditPage() {
       <PageHeader
         title="Audit log"
         subtitle={`${entries.length} entr${entries.length === 1 ? 'y' : 'ies'} · append-only, read-only for every role.`}
+        info={
+          <>
+            <p>
+              Every state change in your organisation is recorded here automatically: who did
+              what, to which control, when (UTC). Nobody — including admins — can edit or delete
+              entries; the database itself rejects changes.
+            </p>
+            <p>
+              Entries hold IDs and action names only, never content such as evidence text, so
+              the log can be reviewed without exposing sensitive data.
+            </p>
+          </>
+        }
         action={
           <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-600/10">
             <Lock className="h-3.5 w-3.5" /> Immutable — enforced by the database
