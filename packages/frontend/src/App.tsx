@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth';
+import { ToastProvider } from './components/toast';
 import { Layout } from './components/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
@@ -25,7 +26,8 @@ function RequireAdmin({ children }: { children: ReactNode }) {
 export function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
+      <ToastProvider>
+        <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route
@@ -49,8 +51,9 @@ export function App() {
             />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
+          </Routes>
+        </BrowserRouter>
+      </ToastProvider>
     </AuthProvider>
   );
 }
