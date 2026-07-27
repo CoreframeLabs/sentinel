@@ -53,4 +53,4 @@ jobs:
         run: docker build -f packages/backend/Dockerfile .
 
       - name: Dependency audit (production dependencies)
-        run: npm audit --omit=dev --audit-level=high
+        run: node scripts/check-audit.js

@@ -361,4 +361,16 @@ nothing at seed time calls any API.
 
 GitHub Actions (`.github/workflows/ci.yml`): install → typecheck → lint →
 test against a PostgreSQL service container → frontend build → backend Docker
-image build → `npm audit` on production dependencies.
+image build → dependency audit on production dependencies.
+
+The audit step (`scripts/check-audit.js`) wraps `npm audit` rather than
+calling it directly: it fails on any high/critical finding except advisories
+on an explicit, dated, reasoned allowlist in that file. Today that list has
+one entry — `GHSA-qwww-vcr4-c8h2` ("React Router: RSC Mode CSRF Bypass"),
+present in every currently published `react-router-dom` release including
+the latest. This app is a client-only SPA using only the declarative
+`<BrowserRouter>`/`<Routes>`/`<Route>` API — never RSC, a data router, or
+loaders/actions — so the vulnerable path is not reachable, and downgrading
+below the vulnerable range was tested and found to reintroduce thirteen
+*other* high-severity advisories that the current version already fixes.
+Anything not on the allowlist still fails CI immediately.
