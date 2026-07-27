@@ -3,11 +3,11 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://REPLACE-WITH-RAILWAY-BACKEND.up.railway.app/api/:path*"
+      "destination": "https://sentinel-qpwf.onrender.com/api/:path*"
     },
     {
       "source": "/health",
-      "destination": "https://REPLACE-WITH-RAILWAY-BACKEND.up.railway.app/health"
+      "destination": "https://sentinel-qpwf.onrender.com/health"
     },
     { "source": "/((?!api|health).*)", "destination": "/index.html" }
   ]
