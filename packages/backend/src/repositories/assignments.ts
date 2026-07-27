@@ -1,4 +1,4 @@
-import { Queryable, AssignmentRow, AssignmentState } from './types';
+import { Queryable, AssignmentRow, AssignmentState, EvidenceMethod } from './types';
 
 /**
  * Assignments repository. Every method requires organisationId; mutation
@@ -99,20 +99,54 @@ export async function findLatestEvidenceForControl(
   return result.rows[0] ?? null;
 }
 
-/** Sets the evidence note. Only valid for the assignee while not yet accepted. */
-export async function setEvidenceNote(
+export interface SetEvidenceInput {
+  summary: string;
+  method?: EvidenceMethod | null;
+  periodStart?: string | null;
+  periodEnd?: string | null;
+  sampleSize?: number | null;
+  population?: number | null;
+  location?: string | null;
+}
+
+/**
+ * Sets the evidence record: the narrative summary plus the structured fields
+ * around it. Only valid for the assignee while not yet accepted. Structured
+ * fields are always written (as NULL when omitted) so a revision cannot leave
+ * stale values from a previous submission attached to new evidence.
+ */
+export async function setEvidence(
   db: Queryable,
   organisationId: string,
   id: string,
   assigneeId: string,
-  evidenceNote: string
+  evidence: SetEvidenceInput
 ): Promise<AssignmentRow | null> {
   const result = await db.query<AssignmentRow>(
-    `UPDATE assignments SET evidence_note = $4, updated_at = now()
+    `UPDATE assignments SET
+       evidence_note = $4,
+       evidence_method = $5,
+       evidence_period_start = $6,
+       evidence_period_end = $7,
+       evidence_sample_size = $8,
+       evidence_population = $9,
+       evidence_location = $10,
+       updated_at = now()
      WHERE organisation_id = $1 AND id = $2 AND assignee_id = $3
        AND state IN ('assigned', 'rejected')
      RETURNING *`,
-    [organisationId, id, assigneeId, evidenceNote]
+    [
+      organisationId,
+      id,
+      assigneeId,
+      evidence.summary,
+      evidence.method ?? null,
+      evidence.periodStart ?? null,
+      evidence.periodEnd ?? null,
+      evidence.sampleSize ?? null,
+      evidence.population ?? null,
+      evidence.location ?? null,
+    ]
   );
   return result.rows[0] ?? null;
 }

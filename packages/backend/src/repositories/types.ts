@@ -39,6 +39,8 @@ export interface ControlRow {
   updated_at: Date;
 }
 
+export type EvidenceMethod = 'inspection' | 'observation' | 'inquiry' | 'reperformance';
+
 export interface AssignmentRow {
   id: string;
   organisation_id: string;
@@ -47,6 +49,12 @@ export interface AssignmentRow {
   assigned_by: string;
   due_date: string;
   evidence_note: string | null;
+  evidence_method: EvidenceMethod | null;
+  evidence_period_start: string | null;
+  evidence_period_end: string | null;
+  evidence_sample_size: number | null;
+  evidence_population: number | null;
+  evidence_location: string | null;
   state: AssignmentState;
   rejection_reason: string | null;
   created_at: Date;
@@ -119,12 +127,15 @@ export interface CsvImportRowResultRow {
   created_at: Date;
 }
 
+export type ReviewPosture = 'balanced' | 'strict' | 'coaching';
+
 export interface AiFeatureSettingsRow {
   id: string;
   organisation_id: string;
   enabled: boolean;
   max_requests_per_user_per_day: number;
   max_requests_per_org_per_day: number;
+  review_posture: ReviewPosture;
   enabled_by: string | null;
   enabled_at: Date | null;
   created_at: Date;

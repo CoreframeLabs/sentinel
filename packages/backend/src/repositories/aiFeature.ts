@@ -1,4 +1,10 @@
-import { Queryable, AiFeatureSettingsRow, AiInteractionRow, AiResponseType } from './types';
+import {
+  Queryable,
+  AiFeatureSettingsRow,
+  AiInteractionRow,
+  AiResponseType,
+  ReviewPosture,
+} from './types';
 
 /**
  * AI feature settings and interaction metadata. The feature flag and both
@@ -14,6 +20,7 @@ import { Queryable, AiFeatureSettingsRow, AiInteractionRow, AiResponseType } fro
 
 export const AI_DEFAULT_MAX_REQUESTS_PER_USER_PER_DAY = 10;
 export const AI_DEFAULT_MAX_REQUESTS_PER_ORG_PER_DAY = 50;
+export const AI_DEFAULT_REVIEW_POSTURE: ReviewPosture = 'balanced';
 
 export async function getSettings(
   db: Queryable,
@@ -39,20 +46,22 @@ export async function upsertSettings(
     enabled: boolean;
     maxRequestsPerUserPerDay: number;
     maxRequestsPerOrgPerDay: number;
+    reviewPosture: ReviewPosture;
     actorUserId: string;
   }
 ): Promise<AiFeatureSettingsRow> {
   const result = await db.query<AiFeatureSettingsRow>(
     `INSERT INTO ai_feature_settings
        (organisation_id, enabled, max_requests_per_user_per_day, max_requests_per_org_per_day,
-        enabled_by, enabled_at)
-     VALUES ($1, $2, $3, $4,
+        review_posture, enabled_by, enabled_at)
+     VALUES ($1, $2, $3, $4, $6,
              CASE WHEN $2 THEN $5::uuid ELSE NULL END,
              CASE WHEN $2 THEN now() ELSE NULL END)
      ON CONFLICT (organisation_id) DO UPDATE SET
        enabled = EXCLUDED.enabled,
        max_requests_per_user_per_day = EXCLUDED.max_requests_per_user_per_day,
        max_requests_per_org_per_day = EXCLUDED.max_requests_per_org_per_day,
+       review_posture = EXCLUDED.review_posture,
        enabled_by = CASE WHEN EXCLUDED.enabled THEN $5::uuid ELSE ai_feature_settings.enabled_by END,
        enabled_at = CASE WHEN EXCLUDED.enabled AND NOT ai_feature_settings.enabled
                          THEN now() ELSE ai_feature_settings.enabled_at END,
@@ -64,6 +73,7 @@ export async function upsertSettings(
       input.maxRequestsPerUserPerDay,
       input.maxRequestsPerOrgPerDay,
       input.actorUserId,
+      input.reviewPosture,
     ]
   );
   return result.rows[0]!;

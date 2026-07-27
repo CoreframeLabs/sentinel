@@ -8,7 +8,7 @@ import * as controlsRepo from '../repositories/controls';
 import * as assignmentsRepo from '../repositories/assignments';
 import * as aiFeature from '../repositories/aiFeature';
 import * as auditLog from '../repositories/auditLog';
-import { AiResponseType } from '../repositories/types';
+import { AiResponseType, ReviewPosture } from '../repositories/types';
 import {
   AiReviewClient,
   AiTimeoutError,
@@ -16,11 +16,13 @@ import {
   completeWithTimeout,
 } from '../lib/aiClient';
 import {
-  AI_REVIEW_SYSTEM_PROMPT,
   INSUFFICIENT_EVIDENCE_MESSAGE,
+  REVIEW_POSTURES,
+  buildSystemPrompt,
   buildUserMessage,
   classifyResponse,
 } from '../lib/aiReview';
+import { composeEvidenceDocument, evidenceFromAssignment } from '../lib/evidence';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_DAILY_LIMIT = 10000;
@@ -73,12 +75,18 @@ export function aiReviewRouter(
       const review = control
         ? await assignmentsRepo.findLatestEvidenceForControl(pool, organisationId, controlId)
         : null;
-      if (!control || !review?.evidence_note) {
+      const evidence = review ? evidenceFromAssignment(review) : null;
+      if (!control || !review || !evidence) {
         // Covers: control missing, control in another organisation, and no
         // submitted evidence — all indistinguishable to the caller.
         res.status(404).json({ error: 'Not found' });
         return;
       }
+
+      // The one text the model sees and the one the reviewer sees highlighted
+      // are the same string, so a citation can never be validated against
+      // text the user was not shown.
+      const evidenceDocument = composeEvidenceDocument(evidence);
 
       const recordInteraction = (
         responseType: AiResponseType,
@@ -94,7 +102,7 @@ export function aiReviewRouter(
           controlId,
           reviewId: review.id,
           requestedBy: userId,
-          model: fields.model ?? config.openaiModel,
+          model: fields.model ?? config.aiModel,
           promptTokenCount: fields.promptTokenCount ?? 0,
           completionTokenCount: fields.completionTokenCount ?? 0,
           responseType,
@@ -130,8 +138,8 @@ export function aiReviewRouter(
       try {
         completion = await completeWithTimeout(
           aiClient,
-          AI_REVIEW_SYSTEM_PROMPT,
-          buildUserMessage(review.evidence_note),
+          buildSystemPrompt(settings?.review_posture),
+          buildUserMessage(evidenceDocument),
           config.aiRequestTimeoutMs
         );
       } catch (err) {
@@ -156,8 +164,10 @@ export function aiReviewRouter(
       }
 
       // Application-layer validation: the model is not trusted to have cited
-      // anything. Only the validated outcome and token metadata are stored.
-      const classified = classifyResponse(review.evidence_note, completion.content);
+      // anything. Only the validated outcome and token metadata are stored —
+      // never the verdict, the findings or the evidence, all of which are
+      // content.
+      const classified = classifyResponse(evidenceDocument, completion.content);
       await withTransaction(pool, async (tx) => {
         await aiFeature.insertInteraction(tx, organisationId, {
           controlId,
@@ -189,7 +199,17 @@ export function aiReviewRouter(
       res.json({
         result:
           classified.type === 'cited_assessment'
-            ? { type: 'cited_assessment', assessment: classified.assessment }
+            ? {
+                type: 'cited_assessment',
+                verdict: classified.verdict,
+                findings: classified.findings,
+                gaps: classified.gaps,
+                citations: classified.citations,
+                // Returned so the reviewer sees the citations highlighted in
+                // the exact text that was assessed. Derived from evidence the
+                // caller can already read, and never persisted.
+                evidenceText: evidenceDocument,
+              }
             : { type: 'insufficient_evidence', message: INSUFFICIENT_EVIDENCE_MESSAGE },
       });
     } catch (err) {
@@ -212,6 +232,7 @@ export function aiReviewRouter(
           maxRequestsPerOrgPerDay:
             settings?.max_requests_per_org_per_day ??
             aiFeature.AI_DEFAULT_MAX_REQUESTS_PER_ORG_PER_DAY,
+          reviewPosture: settings?.review_posture ?? aiFeature.AI_DEFAULT_REVIEW_POSTURE,
         },
         deploymentEnabled: config.aiFeatureEnabled,
       });
@@ -224,9 +245,21 @@ export function aiReviewRouter(
     try {
       const organisationId = req.session.organisationId!;
       const userId = req.session.userId!;
-      const { enabled, maxRequestsPerUserPerDay, maxRequestsPerOrgPerDay } = req.body ?? {};
+      const { enabled, maxRequestsPerUserPerDay, maxRequestsPerOrgPerDay, reviewPosture } =
+        req.body ?? {};
       if (typeof enabled !== 'boolean') {
         res.status(400).json({ error: 'enabled must be a boolean' });
+        return;
+      }
+      // Validated against the enum before it can reach the prompt builder:
+      // the posture only ever selects a fragment defined in code, so no
+      // client value is ever interpolated into the system prompt.
+      const posture: ReviewPosture =
+        reviewPosture === undefined || reviewPosture === null
+          ? aiFeature.AI_DEFAULT_REVIEW_POSTURE
+          : (reviewPosture as ReviewPosture);
+      if (!REVIEW_POSTURES.includes(posture)) {
+        res.status(400).json({ error: `reviewPosture must be one of: ${REVIEW_POSTURES.join(', ')}` });
         return;
       }
       const limits = { maxRequestsPerUserPerDay, maxRequestsPerOrgPerDay };
@@ -242,6 +275,7 @@ export function aiReviewRouter(
           enabled,
           maxRequestsPerUserPerDay: maxRequestsPerUserPerDay as number,
           maxRequestsPerOrgPerDay: maxRequestsPerOrgPerDay as number,
+          reviewPosture: posture,
           actorUserId: userId,
         });
         if ((previous?.enabled ?? false) !== enabled) {
@@ -262,6 +296,7 @@ export function aiReviewRouter(
           enabled: settings.enabled,
           maxRequestsPerUserPerDay: settings.max_requests_per_user_per_day,
           maxRequestsPerOrgPerDay: settings.max_requests_per_org_per_day,
+          reviewPosture: settings.review_posture,
         },
         deploymentEnabled: config.aiFeatureEnabled,
       });

@@ -7,6 +7,8 @@ import * as assignmentsRepo from '../repositories/assignments';
 import * as controlsRepo from '../repositories/controls';
 import * as usersRepo from '../repositories/users';
 import * as auditLog from '../repositories/auditLog';
+import { EvidenceMethod } from '../repositories/types';
+import { EVIDENCE_METHODS } from '../lib/evidence';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -80,12 +82,25 @@ export function assignmentsRouter(pool: Pool, log: Logger): Router {
     }
   });
 
-  /** Assignee records an evidence note (text only in v1). */
+  /**
+   * Assignee records their evidence: a narrative summary plus the optional
+   * structured fields an auditor records around it. Every field is validated
+   * here as well as by database CHECK constraints — the constraints are the
+   * backstop, these messages are what the user can act on.
+   */
   router.post('/assignments/:id/evidence', requireAuth, async (req, res, next) => {
     try {
       const organisationId = req.session.organisationId!;
       const id = req.params.id!;
-      const { evidenceNote } = req.body ?? {};
+      const {
+        evidenceNote,
+        method,
+        periodStart,
+        periodEnd,
+        sampleSize,
+        population,
+        location,
+      } = req.body ?? {};
       if (!UUID_RE.test(id)) {
         res.status(404).json({ error: 'Not found' });
         return;
@@ -94,13 +109,66 @@ export function assignmentsRouter(pool: Pool, log: Logger): Router {
         res.status(400).json({ error: 'evidenceNote is required' });
         return;
       }
+
+      const optionalString = (value: unknown) =>
+        typeof value === 'string' && value.trim() ? value.trim() : null;
+
+      const methodValue = optionalString(method);
+      if (methodValue && !(EVIDENCE_METHODS as readonly string[]).includes(methodValue)) {
+        res.status(400).json({ error: `method must be one of: ${EVIDENCE_METHODS.join(', ')}` });
+        return;
+      }
+
+      const dates: Record<string, string | null> = {};
+      for (const [field, value] of Object.entries({ periodStart, periodEnd })) {
+        const parsed = optionalString(value);
+        if (parsed && !DATE_RE.test(parsed)) {
+          res.status(400).json({ error: `${field} must be a date in YYYY-MM-DD format` });
+          return;
+        }
+        dates[field] = parsed;
+      }
+      if (dates.periodStart && dates.periodEnd && dates.periodStart > dates.periodEnd) {
+        res.status(400).json({ error: 'periodStart must not be after periodEnd' });
+        return;
+      }
+
+      const counts: Record<string, number | null> = {};
+      for (const [field, value] of Object.entries({ sampleSize, population })) {
+        if (value === undefined || value === null || value === '') {
+          counts[field] = null;
+          continue;
+        }
+        if (!Number.isInteger(value) || (value as number) < 0 || (value as number) > 1_000_000) {
+          res.status(400).json({ error: `${field} must be a whole number between 0 and 1,000,000` });
+          return;
+        }
+        counts[field] = value as number;
+      }
+      if (
+        counts.sampleSize !== null &&
+        counts.population !== null &&
+        counts.sampleSize! > counts.population!
+      ) {
+        res.status(400).json({ error: 'sampleSize must not exceed population' });
+        return;
+      }
+
       const assignment = await withTransaction(pool, async (tx) => {
-        const updated = await assignmentsRepo.setEvidenceNote(
+        const updated = await assignmentsRepo.setEvidence(
           tx,
           organisationId,
           id,
           req.session.userId!,
-          evidenceNote.trim()
+          {
+            summary: evidenceNote.trim(),
+            method: methodValue as EvidenceMethod | null,
+            periodStart: dates.periodStart!,
+            periodEnd: dates.periodEnd!,
+            sampleSize: counts.sampleSize!,
+            population: counts.population!,
+            location: optionalString(location),
+          }
         );
         if (updated) {
           await auditLog.appendAuditEntry(tx, organisationId, {

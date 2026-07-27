@@ -34,9 +34,15 @@ export class AiUpstreamRateLimitError extends Error {
 
 export class AiUpstreamError extends Error {}
 
-export function createOpenAiReviewClient(config: Config): AiReviewClient {
+/**
+ * Builds the review client for the configured provider. OpenAI and Groq both
+ * speak the OpenAI wire format, so they differ only by key and base URL —
+ * one client, one error-mapping path, no provider branching downstream.
+ */
+export function createAiReviewClient(config: Config): AiReviewClient {
   const client = new OpenAI({
-    apiKey: config.openaiApiKey ?? '',
+    apiKey: config.aiApiKey ?? '',
+    ...(config.aiBaseUrl ? { baseURL: config.aiBaseUrl } : {}),
     timeout: config.aiRequestTimeoutMs,
     maxRetries: 0,
   });
@@ -45,11 +51,14 @@ export function createOpenAiReviewClient(config: Config): AiReviewClient {
     async complete(systemPrompt, userMessage) {
       try {
         const completion = await client.chat.completions.create({
-          model: config.openaiModel,
+          model: config.aiModel,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content: userMessage },
           ],
+          // Both providers honour this; the parser still falls back to prose
+          // if a model ignores it.
+          response_format: { type: 'json_object' },
         });
         return {
           content: completion.choices[0]?.message?.content ?? '',

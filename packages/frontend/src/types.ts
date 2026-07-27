@@ -32,6 +32,8 @@ export interface Control {
   updated_at: string;
 }
 
+export type EvidenceMethod = 'inspection' | 'observation' | 'inquiry' | 'reperformance';
+
 export interface Assignment {
   id: string;
   organisation_id: string;
@@ -40,10 +42,27 @@ export interface Assignment {
   assigned_by: string;
   due_date: string;
   evidence_note: string | null;
+  evidence_method: EvidenceMethod | null;
+  evidence_period_start: string | null;
+  evidence_period_end: string | null;
+  evidence_sample_size: number | null;
+  evidence_population: number | null;
+  evidence_location: string | null;
   state: AssignmentState;
   rejection_reason: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** Payload for POST /api/assignments/:id/evidence. */
+export interface EvidenceDraft {
+  evidenceNote: string;
+  method: EvidenceMethod | '';
+  periodStart: string;
+  periodEnd: string;
+  sampleSize: string;
+  population: string;
+  location: string;
 }
 
 export interface AuditEntry {
@@ -143,10 +162,13 @@ export interface DryRunResult {
 
 /* ---------------- Bounded AI review ---------------- */
 
+export type ReviewPosture = 'balanced' | 'strict' | 'coaching';
+
 export interface AiSettings {
   enabled: boolean;
   maxRequestsPerUserPerDay: number;
   maxRequestsPerOrgPerDay: number;
+  reviewPosture: ReviewPosture;
 }
 
 export interface AiInteraction {
@@ -164,6 +186,23 @@ export interface AiInteraction {
   error_code: string | null;
 }
 
+export type Verdict = 'satisfied' | 'partially_satisfied' | 'not_satisfied';
+
+export interface AiFinding {
+  statement: string;
+  /** Text copied verbatim from the evidence, already verified server-side. */
+  citation: string;
+}
+
 export type AiReviewResult =
-  | { type: 'cited_assessment'; assessment: string }
+  | {
+      type: 'cited_assessment';
+      verdict: Verdict | null;
+      findings: AiFinding[];
+      gaps: string[];
+      citations: string[];
+      /** The exact text that was assessed, so citations can be highlighted
+       * in it. Never stored by the server. */
+      evidenceText: string;
+    }
   | { type: 'insufficient_evidence'; message: string };

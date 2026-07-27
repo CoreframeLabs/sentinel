@@ -21,7 +21,7 @@ import { adminRouter } from './routes/admin';
 import { usersRouter } from './routes/users';
 import { importsRouter } from './routes/imports';
 import { aiReviewRouter } from './routes/aiReview';
-import { AiReviewClient, createOpenAiReviewClient } from './lib/aiClient';
+import { AiReviewClient, createAiReviewClient } from './lib/aiClient';
 
 export interface AppDeps {
   /** Injectable AI client so tests never call the real OpenAI API. */
@@ -100,7 +100,7 @@ export function buildApp(config: Config, pool: Pool, log: Logger, deps: AppDeps 
   app.use('/api', importsRouter(pool, log));
 
   const aiClient =
-    deps.aiClient ?? (config.aiFeatureEnabled ? createOpenAiReviewClient(config) : null);
+    deps.aiClient ?? (config.aiFeatureEnabled ? createAiReviewClient(config) : null);
   app.use('/api', aiReviewRouter(config, pool, log, aiClient));
 
   app.use((_req, res) => {

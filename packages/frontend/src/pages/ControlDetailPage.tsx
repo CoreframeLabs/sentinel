@@ -4,7 +4,8 @@ import { ArrowLeft, ClipboardList, Sparkles, UserPlus } from 'lucide-react';
 import { api, ApiError } from '../api';
 import { useAuth } from '../auth';
 import { useToast } from '../components/toast';
-import { AiReviewResult, Assignment, Control, ControlStatus, OrgMember } from '../types';
+import { AiReviewResult, Assignment, Control, ControlStatus, OrgMember, Verdict } from '../types';
+import { CitationHighlight } from '../components/CitationHighlight';
 import {
   Button,
   Card,
@@ -229,6 +230,7 @@ export function ControlDetailPage() {
                     {a.evidence_note ? (
                       <blockquote className="mt-2 rounded-lg border-l-2 border-indigo-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
                         {a.evidence_note}
+                        <EvidenceFacts assignment={a} />
                       </blockquote>
                     ) : null}
                     {a.rejection_reason && a.state === 'rejected' ? (
@@ -306,16 +308,128 @@ function AiReviewCard({ controlId, hasEvidence }: { controlId: string; hasEviden
         </p>
       ) : null}
       {result?.type === 'cited_assessment' ? (
-        <blockquote className="mt-3 rounded-lg border-l-2 border-indigo-300 bg-indigo-50/60 px-3 py-2 text-sm text-slate-800">
-          {result.assessment}
-        </blockquote>
+        <div className="mt-4 space-y-4">
+          {result.verdict ? <VerdictBadge verdict={result.verdict} /> : null}
+
+          {result.findings.length > 0 ? (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Findings
+              </p>
+              <ul className="mt-2 space-y-2.5">
+                {result.findings.map((f, i) => (
+                  <li key={i} className="rounded-lg border border-slate-200 bg-white p-3">
+                    <p className="text-sm text-slate-800">{f.statement}</p>
+                    <p className="mt-1.5 border-l-2 border-amber-300 pl-2.5 text-xs italic text-slate-600">
+                      “{f.citation}”
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {result.gaps.length > 0 ? (
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Gaps identified
+              </p>
+              <ul className="mt-2 space-y-1">
+                {result.gaps.map((gap, i) => (
+                  <li key={i} className="flex gap-2 text-sm text-slate-700">
+                    <span className="text-amber-600">•</span>
+                    {gap}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Evidence reviewed
+            </p>
+            <p className="mt-1 text-xs text-slate-500">
+              Highlighted text is what the AI quoted — each phrase was verified against this
+              evidence before you were shown it.
+            </p>
+            <div className="mt-2 rounded-lg border border-slate-200 bg-white p-3">
+              <CitationHighlight text={result.evidenceText} citations={result.citations} />
+            </div>
+          </div>
+        </div>
       ) : null}
       {result?.type === 'insufficient_evidence' ? (
-        <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">
+        <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
           {result.message}
         </p>
       ) : null}
     </Card>
+  );
+}
+
+const METHOD_LABELS: Record<NonNullable<Assignment['evidence_method']>, string> = {
+  inspection: 'Inspection',
+  observation: 'Observation',
+  inquiry: 'Inquiry',
+  reperformance: 'Re-performance',
+};
+
+/** The structured facts recorded alongside the narrative, shown as chips so
+ * a reviewer can see the shape of the evidence at a glance. */
+function EvidenceFacts({ assignment: a }: { assignment: Assignment }) {
+  const facts: string[] = [];
+  if (a.evidence_method) facts.push(METHOD_LABELS[a.evidence_method]);
+  if (a.evidence_period_start && a.evidence_period_end) {
+    facts.push(`${a.evidence_period_start} → ${a.evidence_period_end}`);
+  }
+  if (a.evidence_sample_size !== null) {
+    facts.push(
+      a.evidence_population !== null
+        ? `Sample ${a.evidence_sample_size} of ${a.evidence_population}`
+        : `Sample ${a.evidence_sample_size}`
+    );
+  }
+  if (a.evidence_location) facts.push(a.evidence_location);
+  if (facts.length === 0) return null;
+
+  return (
+    <span className="mt-2 flex flex-wrap gap-1.5">
+      {facts.map((fact) => (
+        <span
+          key={fact}
+          className="inline-flex rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 ring-1 ring-inset ring-slate-300"
+        >
+          {fact}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+const VERDICT_META: Record<Verdict, { label: string; className: string }> = {
+  satisfied: {
+    label: 'Satisfied',
+    className: 'bg-emerald-50 text-emerald-800 ring-emerald-600/20',
+  },
+  partially_satisfied: {
+    label: 'Partially satisfied',
+    className: 'bg-amber-50 text-amber-800 ring-amber-600/20',
+  },
+  not_satisfied: {
+    label: 'Not satisfied',
+    className: 'bg-rose-50 text-rose-800 ring-rose-600/20',
+  },
+};
+
+function VerdictBadge({ verdict }: { verdict: Verdict }) {
+  const meta = VERDICT_META[verdict];
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset ${meta.className}`}
+    >
+      AI verdict: {meta.label}
+    </span>
   );
 }
 

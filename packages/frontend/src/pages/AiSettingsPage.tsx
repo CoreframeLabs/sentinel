@@ -2,7 +2,27 @@ import { FormEvent, useEffect, useState } from 'react';
 import { Bot } from 'lucide-react';
 import { api, ApiError } from '../api';
 import { useToast } from '../components/toast';
-import { AiInteraction, AiSettings } from '../types';
+import { AiInteraction, AiSettings, ReviewPosture } from '../types';
+
+/** Posture only shapes tone and emphasis — the reviewer's core rules are
+ * fixed in application code and cannot be edited from the UI. */
+const POSTURES: { value: ReviewPosture; label: string; description: string }[] = [
+  {
+    value: 'balanced',
+    label: 'Balanced',
+    description: 'Acknowledges what is evidenced and names what is missing.',
+  },
+  {
+    value: 'strict',
+    label: 'Strict',
+    description: 'Audit-grade scepticism: anything not explicitly evidenced is not demonstrated.',
+  },
+  {
+    value: 'coaching',
+    label: 'Coaching',
+    description: 'Explains what would close each gap, for the person who submitted the evidence.',
+  },
+];
 import { Button, Card, EmptyState, inputClass, PageHeader } from '../components/ui';
 import { formatDate } from '../lib/format';
 
@@ -47,6 +67,7 @@ export function AiSettingsPage() {
           enabled: settings.enabled,
           maxRequestsPerUserPerDay: settings.maxRequestsPerUserPerDay,
           maxRequestsPerOrgPerDay: settings.maxRequestsPerOrgPerDay,
+          reviewPosture: settings.reviewPosture,
         },
       });
       toast.success('AI settings saved.');
@@ -104,6 +125,28 @@ export function AiSettingsPage() {
               </span>
             </span>
           </label>
+          <label className="block text-sm">
+            <span className="font-medium text-slate-700">Review posture</span>
+            <select
+              className={`mt-1.5 ${inputClass}`}
+              value={settings.reviewPosture}
+              onChange={(e) =>
+                setSettings({ ...settings, reviewPosture: e.target.value as ReviewPosture })
+              }
+            >
+              {POSTURES.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            <span className="mt-1.5 block text-xs text-slate-500">
+              {POSTURES.find((p) => p.value === settings.reviewPosture)?.description} The rules
+              that matter cannot be changed from here: the reviewer always sees only the evidence,
+              must quote it verbatim, and must report insufficient evidence otherwise.
+            </span>
+          </label>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm">
               <span className="font-medium text-slate-700">Max requests per user per day</span>

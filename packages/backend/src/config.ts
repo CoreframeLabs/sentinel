@@ -7,8 +7,13 @@ export interface Config {
   /** Deployment-level AI switch. Even when true, each organisation must be
    * enabled individually by an admin (ai_feature_settings). */
   aiFeatureEnabled: boolean;
-  openaiApiKey: string | null;
-  openaiModel: string;
+  /** Which upstream serves AI review. Both speak the OpenAI wire format, so
+   * they share one client — only the key and base URL differ. */
+  aiProvider: AiProvider;
+  /** Key for the selected provider; null when AI is disabled. */
+  aiApiKey: string | null;
+  aiModel: string;
+  aiBaseUrl: string | null;
   aiRequestTimeoutMs: number;
   /** Demo deployment: the frontend shows a role-aware "you are X, try this"
    * scenario card. Off by default so nothing demo-only reaches a real
@@ -19,6 +24,17 @@ export interface Config {
 export class ConfigError extends Error {}
 
 const MIN_SESSION_SECRET_LENGTH = 32;
+
+export type AiProvider = 'openai' | 'groq';
+
+const AI_PROVIDERS: AiProvider[] = ['openai', 'groq'];
+
+/** Per-provider defaults. Groq is wire-compatible with the OpenAI SDK, so it
+ * needs only its own base URL. */
+const AI_PROVIDER_DEFAULTS: Record<AiProvider, { baseUrl: string | null; model: string; keyVar: string }> = {
+  openai: { baseUrl: null, model: 'gpt-4o-mini', keyVar: 'OPENAI_API_KEY' },
+  groq: { baseUrl: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile', keyVar: 'GROQ_API_KEY' },
+};
 
 /**
  * Loads and validates configuration from environment variables.
@@ -49,10 +65,23 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   const aiFeatureEnabled = aiFeatureEnabledRaw === 'true';
 
+  // Defaults to openai so an existing deployment configured with
+  // OPENAI_API_KEY keeps booting after an upgrade; set AI_PROVIDER=groq to
+  // switch.
+  const aiProviderRaw = env.AI_PROVIDER?.trim() || 'openai';
+  if (!AI_PROVIDERS.includes(aiProviderRaw as AiProvider)) {
+    throw new ConfigError(
+      `AI_PROVIDER must be one of: ${AI_PROVIDERS.join(', ')} (got "${aiProviderRaw}")`
+    );
+  }
+  const aiProvider = aiProviderRaw as AiProvider;
+  const providerDefaults = AI_PROVIDER_DEFAULTS[aiProvider];
+
   // Fail closed at startup, not on first request: an AI-enabled deployment
-  // without a key must never boot.
-  const openaiApiKey = env.OPENAI_API_KEY?.trim() || null;
-  if (aiFeatureEnabled && !openaiApiKey) missing.push('OPENAI_API_KEY');
+  // without a key for the *selected* provider must never boot.
+  const aiApiKey =
+    (aiProvider === 'groq' ? env.GROQ_API_KEY?.trim() : env.OPENAI_API_KEY?.trim()) || null;
+  if (aiFeatureEnabled && !aiApiKey) missing.push(providerDefaults.keyVar);
 
   if (missing.length > 0) {
     throw new ConfigError(`Missing required environment variable(s): ${missing.join(', ')}`);
@@ -87,8 +116,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     frontendUrl: env.FRONTEND_URL ?? 'http://localhost:5173',
     port,
     aiFeatureEnabled,
-    openaiApiKey,
-    openaiModel: env.OPENAI_MODEL?.trim() || 'gpt-4o-mini',
+    aiProvider,
+    aiApiKey,
+    // AI_MODEL is provider-neutral; OPENAI_MODEL is still honoured so an
+    // existing configuration keeps working unchanged.
+    aiModel: env.AI_MODEL?.trim() || env.OPENAI_MODEL?.trim() || providerDefaults.model,
+    aiBaseUrl: env.AI_BASE_URL?.trim() || providerDefaults.baseUrl,
     aiRequestTimeoutMs,
     demoMode: demoModeRaw === 'true',
   };

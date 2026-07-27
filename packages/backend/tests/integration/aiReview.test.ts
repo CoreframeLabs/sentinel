@@ -46,7 +46,7 @@ class FakeAiClient implements AiReviewClient {
 
 const AI_TEST_CONFIG = {
   aiFeatureEnabled: true,
-  openaiApiKey: 'test-key-never-used',
+  aiApiKey: 'test-key-never-used',
   aiRequestTimeoutMs: 250,
 };
 
@@ -93,7 +93,11 @@ describe('bounded AI review', () => {
     return control.body.control.id as string;
   }
 
-  async function enableAi(limits?: { user?: number; org?: number }): Promise<void> {
+  async function enableAi(limits?: {
+    user?: number;
+    org?: number;
+    posture?: 'balanced' | 'strict' | 'coaching';
+  }): Promise<void> {
     await admin.agent
       .put('/api/admin/ai-settings')
       .set('x-csrf-token', admin.csrf)
@@ -101,8 +105,18 @@ describe('bounded AI review', () => {
         enabled: true,
         maxRequestsPerUserPerDay: limits?.user ?? 10,
         maxRequestsPerOrgPerDay: limits?.org ?? 50,
+        ...(limits?.posture ? { reviewPosture: limits.posture } : {}),
       })
       .expect(200);
+  }
+
+  /** The structured payload the model is contracted to return. */
+  function finding(citation: string, verdict = 'satisfied'): string {
+    return JSON.stringify({
+      verdict,
+      findings: [{ statement: 'The evidence supports this.', citation }],
+      gaps: ['No evidence of independent sign-off.'],
+    });
   }
 
   const requestReview = (id = controlId) =>
@@ -159,13 +173,26 @@ describe('bounded AI review', () => {
     expect(fake.lastSystemPrompt).toContain('compliance control reviewer');
   });
 
-  it('returns a cited assessment when the response quotes the evidence verbatim', async () => {
+  it('returns a structured finding when the response quotes the evidence verbatim', async () => {
     await enableAi();
-    const response =
-      'The control appears in place: "archived in the compliance drive" indicates retention.';
-    fake.respondWith(response);
+    fake.respondWith(finding('archived in the compliance drive', 'partially_satisfied'));
     const res = await requestReview().expect(200);
-    expect(res.body.result).toEqual({ type: 'cited_assessment', assessment: response });
+
+    expect(res.body.result).toMatchObject({
+      type: 'cited_assessment',
+      verdict: 'partially_satisfied',
+      findings: [
+        {
+          statement: 'The evidence supports this.',
+          citation: 'archived in the compliance drive',
+        },
+      ],
+      gaps: ['No evidence of independent sign-off.'],
+      citations: ['archived in the compliance drive'],
+    });
+    // The evidence is echoed back so the reviewer can see the citation
+    // highlighted in the exact text that was assessed.
+    expect(res.body.result.evidenceText).toContain(EVIDENCE);
 
     const stored = await ctx.pool.query('SELECT * FROM ai_interactions');
     expect(stored.rows).toHaveLength(1);
@@ -177,13 +204,56 @@ describe('bounded AI review', () => {
       completion_token_count: 7,
       error_code: null,
     });
-    // Metadata only: no column of the stored row contains the evidence, the
-    // prompt or the model response.
+    // Metadata only: no column of the stored row holds the evidence, the
+    // prompt, the model response, the verdict or the findings.
     for (const value of Object.values(stored.rows[0])) {
       if (typeof value !== 'string') continue;
       expect(value).not.toContain('archived in the compliance drive');
       expect(value).not.toContain(EVIDENCE);
+      expect(value).not.toContain('partially_satisfied');
+      expect(value).not.toContain('The evidence supports this.');
     }
+  });
+
+  it('drops findings whose citations were invented by the model', async () => {
+    await enableAi();
+    fake.respondWith(
+      JSON.stringify({
+        verdict: 'satisfied',
+        findings: [
+          { statement: 'Genuine.', citation: 'archived in the compliance drive' },
+          { statement: 'Fabricated.', citation: 'approved by the audit committee' },
+        ],
+        gaps: [],
+      })
+    );
+    const res = await requestReview().expect(200);
+    expect(res.body.result.findings).toEqual([
+      { statement: 'Genuine.', citation: 'archived in the compliance drive' },
+    ]);
+  });
+
+  it('reports insufficient evidence when every citation was invented', async () => {
+    await enableAi();
+    fake.respondWith(finding('approved by the audit committee'));
+    const res = await requestReview().expect(200);
+    expect(res.body.result.type).toBe('insufficient_evidence');
+    const stored = await ctx.pool.query('SELECT response_type, citations_present FROM ai_interactions');
+    expect(stored.rows[0]).toEqual({
+      response_type: 'insufficient_evidence',
+      citations_present: false,
+    });
+  });
+
+  it('applies the configured review posture to the system prompt only', async () => {
+    await enableAi({ posture: 'strict' });
+    fake.respondWith(finding('archived in the compliance drive'));
+    await requestReview().expect(200);
+    expect(fake.lastSystemPrompt).toContain('sceptical, audit-grade standard');
+    // The core rules survive whatever posture is set.
+    expect(fake.lastSystemPrompt).toContain('You may not invent citations.');
+    // Posture never leaks into the bounded user message.
+    expect(fake.lastUserMessage).not.toContain('sceptical');
   });
 
   it('treats a response with no valid citation as insufficient evidence', async () => {

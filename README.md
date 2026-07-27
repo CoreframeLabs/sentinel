@@ -19,9 +19,12 @@ deletion) treated as first-class deliverables.
 - **Controls library** — admins define named compliance controls
   ("Data Retention Policy reviewed", "Access control audit"). Each control has
   a status: Pending, In Review, Passed, Deferred.
-- **Assignments** — managers assign controls to employees with a due date.
-  Employees record evidence (text note in v1) and submit for review; managers
-  accept or reject with a reason.
+- **Assignments and structured evidence** — managers assign controls to
+  employees with a due date. Employees record evidence the way an auditor
+  would: a narrative summary plus how the control was tested (inspection /
+  observation / inquiry / re-performance), the period covered, the sample
+  examined out of the population, and where the record is filed — with a
+  live completeness meter. Managers accept or reject with a reason.
 - **Attention queue** — each role sees only what needs their action: employees
   see open and overdue work, managers see submissions ready for review, admins
   see the organisation-wide picture.
@@ -102,7 +105,16 @@ have no access to any import endpoint. Profile deletion — admin only.
 ## Bounded AI review
 
 Managers can request an AI assessment of the evidence submitted for a control
-(the control detail page). The trust boundary is enforced at the data layer:
+(the control detail page). The result is an audit finding, not a chat reply: a
+**verdict** (satisfied / partially satisfied / not satisfied), **findings**
+each backed by a quote, and the **gaps** the evidence does not close — with
+every quoted phrase highlighted in the evidence itself, so you can see what the
+model actually cited and what it ignored.
+
+Runs on **Groq or OpenAI** — both speak the same wire format, so the provider
+is one environment variable (`AI_PROVIDER`) and no code change.
+
+The trust boundary is enforced at the data layer:
 
 - **Disabled by default.** Two switches must both be on: the deployment flag
   (`AI_FEATURE_ENABLED`) and the per-organisation toggle, which only an admin
@@ -114,12 +126,19 @@ Managers can request an AI assessment of the evidence submitted for a control
   evidence is fetched from the database using the session's organisation ID —
   the endpoint does not accept evidence text in the request body, so a
   manipulated payload cannot inject content into the prompt.
-- **Citation validation, in code.** The model must quote the evidence
-  verbatim. The application extracts quoted phrases from the response and
-  checks each against the evidence; a response with no valid citation — or
-  containing `INSUFFICIENT_EVIDENCE` — is returned as an explicit
-  insufficient-evidence result. The model is never trusted to have cited
-  anything.
+- **Citation validation, in code.** Every finding's citation must appear
+  verbatim in the evidence or that finding is discarded; if nothing survives,
+  the result is an explicit insufficient-evidence response, as it is for a
+  reply containing `INSUFFICIENT_EVIDENCE`. A verdict outside the permitted
+  set is ignored. Parsing is defensive — a model that ignores the JSON
+  contract falls back to the prose path rather than erroring — and the model
+  is never trusted to have cited anything.
+- **Review posture, without a prompt-injection hole.** Admins choose a posture
+  (balanced / strict / coaching) that selects a *code-defined* prompt fragment
+  by enum key. The value is validated against the enum, is never interpolated
+  into the prompt, and cannot relax the core rules: evidence only, verbatim
+  citation, explicit insufficient-evidence. A tampered database row cannot
+  rewrite the reviewer's instructions.
 - **Database-backed rate limits.** Per-user (default 10/day) and per-org
   (default 50/day) limits, admin-configurable, counted from the
   `ai_interactions` table with a 24-hour sliding window — they survive server
@@ -128,7 +147,8 @@ Managers can request an AI assessment of the evidence submitted for a control
   database trigger): who, when, control and review IDs, model, token counts,
   the validated response type (`cited_assessment` / `insufficient_evidence` /
   `rate_limited` / `error`) and whether citations were present. The evidence
-  text, prompt, and raw model response are never stored and never logged.
+  text, prompt, raw response, **verdict and findings** are never stored and
+  never logged — a verdict is the model's conclusion, which is content.
   Upstream failures map to 503 with an `error_code` (`timeout`,
   `upstream_rate_limited`) in the interaction record.
 
@@ -271,8 +291,11 @@ Or run the whole backend stack containerised: `docker compose up --build`.
 | `FRONTEND_URL`          | in production                     | dev localhost | Frontend origin for CORS                                       |
 | `PORT`                  | no                                | `3000`        | API listen port                                                |
 | `AI_FEATURE_ENABLED`    | no                                | `false`       | Deployment-level AI review switch (`true`/`false`)             |
-| `OPENAI_API_KEY`        | when `AI_FEATURE_ENABLED=true`    | —             | OpenAI API key; startup exits 1 if missing while AI is enabled |
-| `OPENAI_MODEL`          | no                                | `gpt-4o-mini` | Model used for AI evidence review                              |
+| `AI_PROVIDER`           | no                                | `openai`      | `groq` or `openai` — both use the same OpenAI-compatible SDK   |
+| `GROQ_API_KEY`          | when provider is `groq` and AI on | —             | Groq API key; startup exits 1 if missing while AI is enabled   |
+| `OPENAI_API_KEY`        | when provider is `openai` and AI on | —           | OpenAI API key; startup exits 1 if missing while AI is enabled |
+| `AI_MODEL`              | no                                | per provider  | Review model (`llama-3.3-70b-versatile` / `gpt-4o-mini`)       |
+| `AI_BASE_URL`           | no                                | per provider  | Override the API base URL (proxy or compatible endpoint)       |
 | `AI_REQUEST_TIMEOUT_MS` | no                                | `30000`       | Per-call OpenAI timeout in milliseconds                        |
 | `DEMO_MODE`             | no                                | `false`       | Shows a role-aware demo scenario card; off for real deployments |
 
@@ -324,8 +347,9 @@ migration version.
 
 ## Live demo
 
-- Frontend: `https://sentinel-demo.vercel.app` *(update after deploy)*
-- API health: `https://<railway-app>.up.railway.app/health`
+- Frontend: `https://sentinel-frontend-woad.vercel.app`
+- API health: `https://sentinel-frontend-woad.vercel.app/health` (proxied to
+  the backend, proving the same-origin rewrite chain)
 
 Demo organisation (Acme Legal LLP) accounts — **demo environment only**:
 
@@ -349,22 +373,26 @@ naming your persona and what to try.
 1. **Sign in as the manager** (`manager@demo.sentinel.app`). The guided tour
    starts on first login; the scenario card lists what to try.
 2. **Review evidence.** Two submissions are waiting. One — client due
-   diligence sampling — carries detailed evidence; the other is a one-line
+   diligence sampling — is a complete record: narrative, method, period,
+   sample of 10 from 41, and where it is filed. The other is a bare
    "Checked — all fine."
 3. **Run AI review on both.** Open each control and press *Request AI review*.
-   The detailed note comes back as an assessment quoting the evidence
-   verbatim; the vague one returns an explicit insufficient-evidence result,
-   because the citation check is enforced in application code rather than
-   trusted to the model.
+   The complete record returns a verdict with findings, each quoting the
+   evidence — and the quotes are **highlighted in the evidence below**, so you
+   can see exactly what was cited. The bare one returns an explicit
+   insufficient-evidence result, because the citation check is enforced in
+   application code rather than trusted to the model.
 4. **Import controls.** Go to *Import*, download the sample file, and run a
    dry run: 9 rows accepted, 3 rejected with a specific reason each. Confirm,
    then expand the run in the history to see per-row checksums.
 5. **Sign in as the admin** (`admin@demo.sentinel.app`) to see the
-   organisation-wide picture, toggle AI review and its rate limits, and read
+   organisation-wide picture, switch the review posture to *strict* and re-run
+   a review to watch the tone change while the citation rules hold, and read
    the append-only audit log — which now contains everything you just did.
 6. **Sign in as the employee** (`employee@demo.sentinel.app`) to see the other
-   side: open assignments, an overdue one, and a rejected submission with the
-   reviewer's reason to revise and resubmit.
+   side: the evidence composer with its completeness meter, an overdue
+   assignment, and a rejected submission with the reviewer's reason to revise
+   and resubmit.
 
 AI review requests only reach OpenAI if the deployment sets
 `AI_FEATURE_ENABLED=true` with a real `OPENAI_API_KEY`; nothing at seed time

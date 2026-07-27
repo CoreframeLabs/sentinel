@@ -24,8 +24,10 @@ export const TEST_CONFIG: Config = {
   frontendUrl: 'http://localhost:5173',
   port: 0,
   aiFeatureEnabled: false,
-  openaiApiKey: null,
-  openaiModel: 'gpt-4o-mini',
+  aiProvider: 'openai',
+  aiApiKey: null,
+  aiModel: 'gpt-4o-mini',
+  aiBaseUrl: null,
   aiRequestTimeoutMs: 30000,
   demoMode: false,
 };

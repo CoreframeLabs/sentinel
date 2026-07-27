@@ -159,18 +159,28 @@ async function main(): Promise<void> {
           control: createdControls[0]!, // Client due diligence files sampled
           dueInDays: 9,
           flow: 'submitted',
+          // A complete record: narrative plus every structured field, so the
+          // AI reviewer has specific, quotable facts to cite.
           evidence:
             'Sampled 10 client files opened between 1 April and 30 June. All 10 held certified ' +
             'photographic ID and a proof of address dated within three months of onboarding. ' +
             '8 of the 10 recorded source of funds at the point of instruction. Two files ' +
             '(M-2261 and M-2288) were missing an updated matter risk assessment; both were ' +
-            'remediated on 14 July and re-checked by the supervising partner. The completed ' +
-            'sampling sheet is saved as Compliance/2026/Q2 CDD Sampling.xlsx.',
+            'remediated on 14 July and re-checked by the supervising partner.',
+          method: 'inspection' as const,
+          periodStart: '2026-04-01',
+          periodEnd: '2026-06-30',
+          sampleSize: 10,
+          population: 41,
+          location: 'Compliance/2026/Q2 CDD Sampling.xlsx',
         },
         {
           control: createdControls[11]!, // Access control audit
           dueInDays: -11,
           flow: 'submitted',
+          // Deliberately bare: no method, period, sample or location. The
+          // contrast with the record above is the point — it is what an
+          // insufficient-evidence response looks like.
           evidence: 'Checked — all fine. See the shared folder.',
         },
         {
@@ -180,6 +190,10 @@ async function main(): Promise<void> {
           evidence:
             'Training completion report exported from the learning portal on 3 July. ' +
             '38 of 41 fee earners have completed both modules.',
+          method: 'inspection' as const,
+          sampleSize: 38,
+          population: 41,
+          location: 'Learning portal export, 3 July',
           rejectionReason:
             'The export does not cover the three fee earners who joined in June. Please re-run ' +
             'it including new joiners and confirm their completion dates.',
@@ -193,6 +207,12 @@ async function main(): Promise<void> {
             'list before the client care letter was issued. Screening reference numbers are ' +
             'recorded on each matter file; two potential name matches were reviewed and ' +
             'discounted with a written rationale.',
+          method: 'reperformance' as const,
+          periodStart: '2026-06-01',
+          periodEnd: '2026-06-30',
+          sampleSize: 27,
+          population: 27,
+          location: 'Matter files, screening reference log',
         },
         { control: createdControls[4]!, dueInDays: -4, flow: 'open' }, // Undertakings register (overdue)
         { control: createdControls[7]!, dueInDays: 6, flow: 'open' }, // Client account reconciliation
@@ -214,13 +234,15 @@ async function main(): Promise<void> {
 
         if (plan.flow === 'open') continue;
 
-        await assignments.setEvidenceNote(
-          tx,
-          org.id,
-          assignment.id,
-          employeeUser.id,
-          plan.evidence
-        );
+        await assignments.setEvidence(tx, org.id, assignment.id, employeeUser.id, {
+          summary: plan.evidence,
+          method: 'method' in plan ? plan.method : null,
+          periodStart: 'periodStart' in plan ? plan.periodStart : null,
+          periodEnd: 'periodEnd' in plan ? plan.periodEnd : null,
+          sampleSize: 'sampleSize' in plan ? plan.sampleSize : null,
+          population: 'population' in plan ? plan.population : null,
+          location: 'location' in plan ? plan.location : null,
+        });
         await auditLog.appendAuditEntry(tx, org.id, {
           userId: employeeUser.id,
           action: 'evidence_added',
@@ -323,6 +345,7 @@ async function main(): Promise<void> {
         enabled: true,
         maxRequestsPerUserPerDay: 10,
         maxRequestsPerOrgPerDay: 50,
+        reviewPosture: 'balanced',
         actorUserId: adminUser.id,
       });
       await auditLog.appendAuditEntry(tx, org.id, {

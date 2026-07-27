@@ -13,7 +13,12 @@ import { api, ApiError } from '../api';
 import { useAuth } from '../auth';
 import { useToast } from '../components/toast';
 import { DemoScenarioCard } from '../components/DemoScenarioCard';
-import { Assignment, Attention, AuditEntry, Control } from '../types';
+import { Assignment, Attention, AuditEntry, Control, EvidenceDraft } from '../types';
+import {
+  EvidenceComposer,
+  draftToPayload,
+  emptyDraft,
+} from '../components/EvidenceComposer';
 import {
   Button,
   Card,
@@ -49,22 +54,30 @@ function EmployeeDashboard({
   onChanged: () => void;
 }) {
   const toast = useToast();
-  const [notes, setNotes] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, EvidenceDraft>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const controlName = (id: string) => controls.find((c) => c.id === id)?.name ?? 'Control';
 
+  const draftFor = (assignment: Assignment) =>
+    drafts[assignment.id] ?? emptyDraft(assignment);
+
+  /**
+   * Saves the evidence, then submits when asked. Submitting always saves
+   * first so the reviewer never sees a stale draft — the API rejects a
+   * submission without evidence anyway.
+   */
   const run = async (assignment: Assignment, action: 'save' | 'submit') => {
     setBusyId(assignment.id);
     try {
-      if (action === 'save') {
-        await api(`/api/assignments/${assignment.id}/evidence`, {
-          method: 'POST',
-          body: { evidenceNote: notes[assignment.id] ?? '' },
-        });
-        toast.success('Evidence saved.');
-      } else {
+      await api(`/api/assignments/${assignment.id}/evidence`, {
+        method: 'POST',
+        body: draftToPayload(draftFor(assignment)),
+      });
+      if (action === 'submit') {
         await api(`/api/assignments/${assignment.id}/submit`, { method: 'POST' });
         toast.success('Submitted for review.');
+      } else {
+        toast.success('Evidence saved.');
       }
       onChanged();
     } catch (err) {
@@ -142,29 +155,14 @@ function EmployeeDashboard({
                     <StateBadge state={a.state} />
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <input
-                    type="text"
-                    aria-label="Evidence note"
-                    placeholder={a.evidence_note ?? 'Describe the evidence for this control…'}
-                    className={`${inputClass} min-w-52 flex-1`}
-                    value={notes[a.id] ?? ''}
-                    onChange={(e) => setNotes({ ...notes, [a.id]: e.target.value })}
-                  />
-                  <Button
-                    variant="secondary"
-                    disabled={busyId === a.id || !(notes[a.id] ?? '').trim()}
-                    onClick={() => void run(a, 'save')}
-                  >
-                    Save evidence
-                  </Button>
-                  <Button
-                    disabled={busyId === a.id || (!a.evidence_note && !(notes[a.id] ?? '').trim())}
-                    onClick={() => void run(a, 'submit')}
-                  >
-                    Submit for review
-                  </Button>
-                </div>
+                <EvidenceComposer
+                  draft={draftFor(a)}
+                  onChange={(draft) => setDrafts({ ...drafts, [a.id]: draft })}
+                  onSave={() => void run(a, 'save')}
+                  onSubmit={() => void run(a, 'submit')}
+                  busy={busyId === a.id}
+                  canSubmit={draftFor(a).evidenceNote.trim() !== ''}
+                />
               </li>
             ))}
           </ul>
