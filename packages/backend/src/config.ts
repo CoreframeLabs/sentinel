@@ -10,6 +10,10 @@ export interface Config {
   openaiApiKey: string | null;
   openaiModel: string;
   aiRequestTimeoutMs: number;
+  /** Demo deployment: the frontend shows a role-aware "you are X, try this"
+   * scenario card. Off by default so nothing demo-only reaches a real
+   * customer deployment. */
+  demoMode: boolean;
 }
 
 export class ConfigError extends Error {}
@@ -71,6 +75,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigError('AI_REQUEST_TIMEOUT_MS must be a positive integer (milliseconds)');
   }
 
+  const demoModeRaw = env.DEMO_MODE ?? 'false';
+  if (demoModeRaw !== 'true' && demoModeRaw !== 'false') {
+    throw new ConfigError(`DEMO_MODE must be "true" or "false" (got "${demoModeRaw}")`);
+  }
+
   return {
     databaseUrl: databaseUrl!,
     sessionSecret: sessionSecret!,
@@ -81,5 +90,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     openaiApiKey,
     openaiModel: env.OPENAI_MODEL?.trim() || 'gpt-4o-mini',
     aiRequestTimeoutMs,
+    demoMode: demoModeRaw === 'true',
   };
 }

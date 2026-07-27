@@ -12,6 +12,7 @@ import {
 import { api, ApiError } from '../api';
 import { useAuth } from '../auth';
 import { useToast } from '../components/toast';
+import { DemoScenarioCard } from '../components/DemoScenarioCard';
 import { Assignment, Attention, AuditEntry, Control } from '../types';
 import {
   Button,
@@ -77,6 +78,7 @@ function EmployeeDashboard({
 
   return (
     <div className="fade-in space-y-6">
+      <DemoScenarioCard />
       <PageHeader
         title="Your work"
         subtitle={
@@ -229,6 +231,7 @@ function ManagerDashboard({
 
   return (
     <div className="fade-in space-y-6">
+      <DemoScenarioCard />
       <PageHeader
         title="Review queue"
         subtitle={
@@ -334,6 +337,7 @@ function AdminDashboard({
 
   return (
     <div className="fade-in space-y-6">
+      <DemoScenarioCard />
       <PageHeader
         title="Organisation overview"
         subtitle="Compliance posture across your whole team."

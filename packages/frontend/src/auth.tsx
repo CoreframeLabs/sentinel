@@ -18,6 +18,9 @@ interface AuthContextValue {
   /** Records tour completion (finish or skip) server-side so it never
    * auto-starts again for this user, on any device. */
   markTourSeen(): Promise<void>;
+  /** Deployment-level flag from GET /api/config: this is a demo instance, so
+   * the dashboards show a role-aware scenario card. */
+  demoMode: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -25,12 +28,21 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const [demoMode, setDemoMode] = useState(false);
 
   useEffect(() => {
     api<{ user: User }>('/api/auth/me')
       .then((res) => setUser(res.user))
       .catch(() => setUser(null))
       .finally(() => setLoading(false));
+  }, []);
+
+  // Public endpoint, fetched independently of the session: a visitor needs
+  // it before logging in, and a failure here must never block the app.
+  useEffect(() => {
+    api<{ demoMode: boolean }>('/api/config')
+      .then((res) => setDemoMode(res.demoMode))
+      .catch(() => setDemoMode(false));
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -63,8 +75,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, loading, login, logout, markTourSeen }),
-    [user, loading, login, logout, markTourSeen]
+    () => ({ user, loading, login, logout, markTourSeen, demoMode }),
+    [user, loading, login, logout, markTourSeen, demoMode]
   );
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

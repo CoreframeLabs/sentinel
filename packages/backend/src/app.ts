@@ -10,6 +10,7 @@ import { csrfProtection, CSRF_COOKIE_NAME } from './middleware/csrf';
 import { createLoginRateLimiter } from './middleware/rateLimit';
 import { errorHandler } from './middleware/errorHandler';
 import { healthRouter } from './routes/health';
+import { configRouter } from './routes/config';
 import { authRouter } from './routes/auth';
 import { controlsRouter } from './routes/controls';
 import { assignmentsRouter } from './routes/assignments';
@@ -77,6 +78,7 @@ export function buildApp(config: Config, pool: Pool, log: Logger, deps: AppDeps 
   });
 
   app.use(healthRouter(pool, log));
+  app.use(configRouter(config));
 
   app.use(buildSessionMiddleware(config, pool));
   app.use(csrfProtection(config.nodeEnv));

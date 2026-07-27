@@ -27,6 +27,7 @@ export const TEST_CONFIG: Config = {
   openaiApiKey: null,
   openaiModel: 'gpt-4o-mini',
   aiRequestTimeoutMs: 30000,
+  demoMode: false,
 };
 
 export interface TestContext {

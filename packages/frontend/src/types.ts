@@ -132,6 +132,13 @@ export interface DryRunResult {
   acceptedRows: number;
   rejectedRows: number;
   rejections: { rowNumber: number; values: string[]; reason: string }[];
+  /** Capped preview of the controls confirming would create. */
+  acceptedPreview: {
+    rowNumber: number;
+    name: string;
+    category: string | null;
+    dueDate: string | null;
+  }[];
 }
 
 /* ---------------- Bounded AI review ---------------- */

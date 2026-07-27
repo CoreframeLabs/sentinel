@@ -1,5 +1,5 @@
 import { ChangeEvent, useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, FileSpreadsheet, History, Upload, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, FileSpreadsheet, History, Upload, XCircle } from 'lucide-react';
 import { api, apiUpload, ApiError } from '../api';
 import { useAuth } from '../auth';
 import { useToast } from '../components/toast';
@@ -13,15 +13,15 @@ import {
 } from '../types';
 import { Button, Card, EmptyState, inputClass, PageHeader } from '../components/ui';
 import { formatDate } from '../lib/format';
+import {
+  FIELD_SPECS,
+  autoDetectMapping,
+  buildSampleCsv,
+  buildTemplateCsv,
+  downloadCsv,
+} from '../lib/csvTemplate';
 
 type Step = 'upload' | 'map' | 'review' | 'done';
-
-const FIELDS: { field: keyof ColumnMapping; label: string; required: boolean }[] = [
-  { field: 'name', label: 'Name', required: true },
-  { field: 'description', label: 'Description', required: false },
-  { field: 'category', label: 'Category', required: false },
-  { field: 'due_date', label: 'Due date (YYYY-MM-DD, future)', required: false },
-];
 
 export function ImportPage() {
   const { user } = useAuth();
@@ -36,6 +36,9 @@ export function ImportPage() {
   const [dryRun, setDryRun] = useState<DryRunResult | null>(null);
   const [importRun, setImportRun] = useState<ImportRun | null>(null);
   const [busy, setBusy] = useState(false);
+  /** True when the mapping was guessed from the headers rather than chosen,
+   * so the form can say so instead of looking like the user's own input. */
+  const [mappingAutoDetected, setMappingAutoDetected] = useState(false);
 
   const loadProfiles = useCallback(() => {
     void api<{ profiles: ImportProfile[] }>('/api/import-profiles').then((res) =>
@@ -56,9 +59,11 @@ export function ImportPage() {
       const form = new FormData();
       form.append('file', chosen);
       const result = await apiUpload<ParseResult>('/api/imports/parse', form);
+      const detected = autoDetectMapping(result.headers);
       setFile(chosen);
       setParsed(result);
-      setMapping({});
+      setMapping(detected);
+      setMappingAutoDetected(Object.keys(detected).length > 0);
       setProfileId('');
       setDryRun(null);
       setStep('map');
@@ -73,7 +78,10 @@ export function ImportPage() {
   const applyProfile = (id: string) => {
     setProfileId(id);
     const profile = profiles.find((p) => p.id === id);
-    if (profile) setMapping(profile.column_mapping);
+    if (profile) {
+      setMapping(profile.column_mapping);
+      setMappingAutoDetected(false);
+    }
   };
 
   const saveProfile = async () => {
@@ -188,6 +196,69 @@ export function ImportPage() {
               onChange={(e) => void onFileChosen(e)}
             />
           </label>
+
+          <div className="mt-5 border-t border-slate-100 pt-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">
+                  Not sure what the file should look like?
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Start from the template, or try the sample — it deliberately contains a few
+                  invalid rows so you can see how they are reported.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => downloadCsv('sentinel-control-template.csv', buildTemplateCsv())}
+                >
+                  <Download className="h-4 w-4" /> Blank template
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => downloadCsv('sentinel-sample-controls.csv', buildSampleCsv())}
+                >
+                  <Download className="h-4 w-4" /> Sample data
+                </Button>
+              </div>
+            </div>
+
+            <div className="mt-4 overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50 uppercase tracking-wide text-slate-500">
+                    <th className="px-3 py-2 font-semibold">Column</th>
+                    <th className="px-3 py-2 font-semibold">Required</th>
+                    <th className="px-3 py-2 font-semibold">Rules</th>
+                    <th className="px-3 py-2 font-semibold">Example</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {FIELD_SPECS.map((spec) => (
+                    <tr key={spec.field}>
+                      <td className="px-3 py-2 font-medium text-slate-900">{spec.header}</td>
+                      <td className="px-3 py-2">
+                        {spec.required ? (
+                          <span className="font-medium text-rose-700">Yes</span>
+                        ) : (
+                          <span className="text-slate-500">Optional</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-slate-600">{spec.rules}</td>
+                      <td className="px-3 py-2 text-slate-500">{spec.example}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              The first row must be column headers. Your headers can differ from these — you map
+              them in the next step, and any extra columns are ignored.
+            </p>
+          </div>
         </Card>
       ) : null}
 
@@ -221,6 +292,12 @@ export function ImportPage() {
           </Card>
 
           <Card title="Step 2 — Map columns">
+            {mappingAutoDetected ? (
+              <p className="mb-4 rounded-lg border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-xs text-slate-600">
+                We matched your column headers automatically — check them below and adjust
+                anything we guessed wrong.
+              </p>
+            ) : null}
             {profiles.length > 0 ? (
               <label className="mb-4 block text-sm">
                 <span className="font-medium text-slate-700">Load a saved profile</span>
@@ -240,18 +317,21 @@ export function ImportPage() {
             ) : null}
 
             <div className="grid gap-4 sm:grid-cols-2">
-              {FIELDS.map(({ field, label, required }) => (
+              {FIELD_SPECS.map(({ field, label, required, rules }) => (
                 <label key={field} className="block text-sm">
                   <span className="font-medium text-slate-700">
                     {label}
                     {required ? <span className="text-rose-600"> *</span> : null}
                   </span>
+                  <span className="ml-1.5 text-xs font-normal text-slate-400">{rules}</span>
                   <select
                     className={`mt-1.5 ${inputClass}`}
                     value={mapping[field] ?? ''}
-                    onChange={(e) =>
-                      setMapping((m) => ({ ...m, [field]: e.target.value || undefined }))
-                    }
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setMapping((m) => ({ ...m, [field]: value || undefined }));
+                      setMappingAutoDetected(false);
+                    }}
                   >
                     <option value="">{required ? 'Select a column…' : 'Not imported'}</option>
                     {parsed.headers.map((h) => (
@@ -311,6 +391,37 @@ export function ImportPage() {
               <XCircle className="h-4 w-4" /> Rejected: <strong>{dryRun.rejectedRows}</strong>
             </span>
           </div>
+
+          {dryRun.acceptedPreview.length > 0 ? (
+            <div className="mb-4 overflow-x-auto rounded-lg border border-emerald-100">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-emerald-100 bg-emerald-50 text-xs uppercase tracking-wide text-emerald-800">
+                    <th className="px-3 py-2 font-semibold">Row</th>
+                    <th className="px-3 py-2 font-semibold">Control to create</th>
+                    <th className="px-3 py-2 font-semibold">Category</th>
+                    <th className="px-3 py-2 font-semibold">Due date</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {dryRun.acceptedPreview.map((r) => (
+                    <tr key={r.rowNumber}>
+                      <td className="px-3 py-2 font-medium text-slate-900">{r.rowNumber}</td>
+                      <td className="px-3 py-2 text-slate-700">{r.name}</td>
+                      <td className="px-3 py-2 text-slate-500">{r.category ?? '—'}</td>
+                      <td className="px-3 py-2 text-slate-500">{r.dueDate ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {dryRun.acceptedRows > dryRun.acceptedPreview.length ? (
+                <p className="border-t border-slate-100 px-3 py-2 text-xs text-slate-500">
+                  … and {dryRun.acceptedRows - dryRun.acceptedPreview.length} more accepted row
+                  {dryRun.acceptedRows - dryRun.acceptedPreview.length === 1 ? '' : 's'}.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           {dryRun.rejections.length > 0 ? (
             <div className="mb-4 overflow-x-auto rounded-lg border border-rose-100">

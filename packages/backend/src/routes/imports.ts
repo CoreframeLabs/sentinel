@@ -209,6 +209,18 @@ export function importsRouter(pool: Pool, log: Logger): Router {
         rejections: summary.rows
           .filter((r) => r.status === 'rejected')
           .map((r) => ({ rowNumber: r.rowNumber, values: r.values, reason: r.rejectionReason })),
+        // A short preview of what confirming would create. Capped rather
+        // than returned in full: an accepted 5MB file can hold thousands of
+        // rows, and the counts above already carry the totals.
+        acceptedPreview: summary.rows
+          .filter((r) => r.status === 'accepted')
+          .slice(0, CSV_PREVIEW_ROW_COUNT)
+          .map((r) => ({
+            rowNumber: r.rowNumber,
+            name: r.control!.name,
+            category: r.control!.category,
+            dueDate: r.control!.dueDate,
+          })),
       });
     } catch (err) {
       next(err);

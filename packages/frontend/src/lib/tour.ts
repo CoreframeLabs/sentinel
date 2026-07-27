@@ -47,7 +47,7 @@ export function buildTourSteps(user: User): TourStep[] {
     target: 'nav-imports',
     route: '/imports',
     title: 'CSV import',
-    body: 'Bulk-import controls from a CSV: upload, map columns (save the mapping as a reusable profile), review a validation dry run, then confirm. Every row’s outcome — accepted or rejected, with the reason — is kept in an append-only history with checksums.',
+    body: 'Bulk-import controls from a CSV: upload, map columns (save the mapping as a reusable profile), review a validation dry run, then confirm. No file to hand? Download the blank template or the sample file from the upload step — the sample includes a few invalid rows so you can see exactly how they are reported. Every row’s outcome is kept in an append-only history with checksums.',
   };
 
   switch (user.role) {

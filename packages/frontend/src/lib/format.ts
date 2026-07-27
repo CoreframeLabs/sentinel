@@ -51,6 +51,11 @@ const AUDIT_LABELS: Record<string, string> = {
   control_status_in_review: 'Status set to In Review',
   control_status_passed: 'Status set to Passed',
   control_status_deferred: 'Status set to Deferred',
+  import_run_created: 'CSV import run',
+  control_created_by_import: 'Control created by import',
+  ai_review_completed: 'AI evidence review run',
+  ai_feature_enabled: 'AI review enabled',
+  ai_feature_disabled: 'AI review disabled',
 };
 
 export function auditLabel(action: string): string {

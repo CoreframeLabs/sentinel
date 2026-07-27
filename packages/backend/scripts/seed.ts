@@ -26,42 +26,62 @@ const DEMO_USERS = [
   { email: 'employee@demo.sentinel.app', displayName: 'Evan Castell', role: 'employee' as const },
 ];
 
-const DEMO_CONTROLS: { name: string; description: string; status: 'pending' | 'in_review' | 'passed' | 'deferred' }[] = [
-  { name: 'Data Retention Policy reviewed', description: 'Annual review of the firm-wide data retention policy.', status: 'passed' },
-  { name: 'Staff compliance training completed', description: 'All fee earners complete the annual regulatory training module.', status: 'in_review' },
-  { name: 'Access control audit', description: 'Quarterly review of system access rights against the joiners/leavers list.', status: 'pending' },
-  { name: 'Client due diligence files sampled', description: 'Sample 10 client files for completeness of due diligence records.', status: 'pending' },
-  { name: 'Conflicts register reviewed', description: 'Monthly review of the conflicts of interest register.', status: 'passed' },
-  { name: 'Complaints log reconciled', description: 'Reconcile the complaints log with the regulator return.', status: 'deferred' },
-  { name: 'Business continuity plan tested', description: 'Annual tabletop exercise of the continuity plan.', status: 'pending' },
-  { name: 'Supervision arrangements confirmed', description: 'Confirm supervision arrangements for all junior staff.', status: 'in_review' },
-  { name: 'Undertakings register reviewed', description: 'Quarterly check that all outstanding undertakings are tracked.', status: 'pending' },
-  { name: 'Financial sanctions screening evidenced', description: 'Evidence that new clients were screened against the sanctions list.', status: 'passed' },
-];
-
 function daysFromNow(days: number): string {
   const d = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * The demo control library: a mid-quarter compliance picture for an SRA-
+ * regulated firm. Every control carries a category and a due date — these are
+ * the two fields the CSV import maps onto, so leaving them empty would make
+ * that feature look pointless in the UI.
+ */
+const DEMO_CONTROLS: {
+  name: string;
+  description: string;
+  category: string;
+  dueInDays: number;
+  status: 'pending' | 'in_review' | 'passed' | 'deferred';
+}[] = [
+  { name: 'Client due diligence files sampled', description: 'Sample 10 client files opened this quarter for completeness of CDD records.', category: 'AML', dueInDays: 9, status: 'in_review' },
+  { name: 'Financial sanctions screening evidenced', description: 'Evidence that new clients and matters were screened against the consolidated sanctions list.', category: 'AML', dueInDays: 38, status: 'passed' },
+  { name: 'Source of funds documented on high-risk matters', description: 'Confirm source of funds is recorded and corroborated for every high-risk matter.', category: 'AML', dueInDays: 21, status: 'pending' },
+  { name: 'Conflicts register reviewed', description: 'Monthly review of the conflicts of interest register and any declined instructions.', category: 'Conduct', dueInDays: 12, status: 'passed' },
+  { name: 'Undertakings register reviewed', description: 'Quarterly check that all outstanding professional undertakings are tracked and discharged.', category: 'Conduct', dueInDays: -4, status: 'pending' },
+  { name: 'Complaints log reconciled with SRA return', description: 'Reconcile the internal complaints log against the figures reported to the regulator.', category: 'Client care', dueInDays: 55, status: 'deferred' },
+  { name: 'Client care letters reviewed', description: 'Check engagement letters meet SRA transparency and costs-information rules.', category: 'Client care', dueInDays: 27, status: 'pending' },
+  { name: 'Client account reconciliation signed off', description: 'Monthly three-way reconciliation under the SRA Accounts Rules, signed by the COFA.', category: 'Client money', dueInDays: 6, status: 'pending' },
+  { name: 'Data retention policy reviewed', description: 'Annual review of the firm-wide data retention and file destruction policy.', category: 'Records', dueInDays: 74, status: 'passed' },
+  { name: 'File closure and archiving checks', description: 'Verify closed matter files are archived with the correct retention date applied.', category: 'Records', dueInDays: 33, status: 'pending' },
+  { name: 'Staff compliance training completed', description: 'All fee earners complete the annual regulatory and AML training modules.', category: 'Training', dueInDays: 16, status: 'in_review' },
+  { name: 'Access control audit', description: 'Quarterly review of case management access rights against the joiners and leavers list.', category: 'Security', dueInDays: -11, status: 'in_review' },
+  { name: 'Supervision arrangements confirmed', description: 'Confirm named supervisors and file review frequency for all junior fee earners.', category: 'Governance', dueInDays: 48, status: 'pending' },
+  { name: 'Business continuity plan tested', description: 'Annual tabletop exercise of the continuity and disaster recovery plan.', category: 'Resilience', dueInDays: 91, status: 'pending' },
+];
+
+/** Canonical CSV headers — shared by the downloadable template, the sample
+ * file offered in the UI, and the saved mapping profiles below, so a saved
+ * profile applies cleanly to a freshly downloaded template. */
 const DEMO_IMPORT_MAPPING = {
   name: 'Control Name',
-  description: 'Details',
+  description: 'Description',
   category: 'Category',
   due_date: 'Due Date',
 };
 
-/** Mixed demo CSV: three valid rows, one missing name, one past due date.
- * Processed through the real import pipeline so checksums are genuine. */
+/** Mixed demo CSV: three valid rows, one missing a name, one with a past due
+ * date. Processed through the real import pipeline so the stored checksums
+ * verify against the original rows. */
 function demoImportCsv(): Buffer {
   return Buffer.from(
     [
-      'Control Name,Details,Category,Due Date',
-      `Regulatory horizon scan,Quarterly review of upcoming regulation,Regulatory,${daysFromNow(45)}`,
-      `Vendor risk assessments refreshed,Annual reassessment of critical vendors,Third party,${daysFromNow(90)}`,
-      ',Row without a control name,Operations,',
-      'Password policy attestation,All staff attest to the password policy,Security,2020-01-01',
-      'Incident response contact tree verified,,Security,',
+      'Control Name,Description,Category,Due Date',
+      `Regulatory horizon scan,Quarterly review of upcoming SRA and Law Society guidance,Governance,${daysFromNow(45)}`,
+      `Counsel and expert engagement checks,Confirm terms and PII cover for instructed counsel,Third party,${daysFromNow(90)}`,
+      ',Row without a control name,Conduct,',
+      'Cyber insurance renewal evidenced,Renewal certificate filed with the practice manager,Governance,2020-01-01',
+      'Outsourced services register reviewed,,Third party,',
     ].join('\n'),
     'utf8'
   );
@@ -106,6 +126,8 @@ async function main(): Promise<void> {
         const control = await controls.createControl(tx, org.id, {
           name: c.name,
           description: c.description,
+          category: c.category,
+          dueDate: daysFromNow(c.dueInDays),
         });
         await auditLog.appendAuditEntry(tx, org.id, {
           userId: adminUser.id,
@@ -123,14 +145,58 @@ async function main(): Promise<void> {
         createdControls.push(control);
       }
 
-      // Assignments: one overdue, one due soon, one submitted for review,
-      // one accepted — a realistic mid-quarter picture.
+      // Assignments covering every state the UI can render, so each demo
+      // role lands on a dashboard with real work on it.
+      //
+      // The two 'submitted' items are deliberately paired: one carries
+      // detailed, quotable evidence and one is vague. A manager can run the
+      // bounded AI review on both and see each branch of the citation
+      // enforcement — a cited assessment, and an explicit
+      // insufficient-evidence response. Without that pairing the feature
+      // cannot be demonstrated.
       const assignmentPlans = [
-        { control: createdControls[2]!, dueInDays: -6, flow: 'open' },
-        { control: createdControls[3]!, dueInDays: 7, flow: 'open' },
-        { control: createdControls[1]!, dueInDays: 3, flow: 'submitted' },
-        { control: createdControls[0]!, dueInDays: -20, flow: 'accepted' },
-        { control: createdControls[8]!, dueInDays: 14, flow: 'open' },
+        {
+          control: createdControls[0]!, // Client due diligence files sampled
+          dueInDays: 9,
+          flow: 'submitted',
+          evidence:
+            'Sampled 10 client files opened between 1 April and 30 June. All 10 held certified ' +
+            'photographic ID and a proof of address dated within three months of onboarding. ' +
+            '8 of the 10 recorded source of funds at the point of instruction. Two files ' +
+            '(M-2261 and M-2288) were missing an updated matter risk assessment; both were ' +
+            'remediated on 14 July and re-checked by the supervising partner. The completed ' +
+            'sampling sheet is saved as Compliance/2026/Q2 CDD Sampling.xlsx.',
+        },
+        {
+          control: createdControls[11]!, // Access control audit
+          dueInDays: -11,
+          flow: 'submitted',
+          evidence: 'Checked — all fine. See the shared folder.',
+        },
+        {
+          control: createdControls[10]!, // Staff compliance training completed
+          dueInDays: 16,
+          flow: 'rejected',
+          evidence:
+            'Training completion report exported from the learning portal on 3 July. ' +
+            '38 of 41 fee earners have completed both modules.',
+          rejectionReason:
+            'The export does not cover the three fee earners who joined in June. Please re-run ' +
+            'it including new joiners and confirm their completion dates.',
+        },
+        {
+          control: createdControls[1]!, // Financial sanctions screening evidenced
+          dueInDays: -20,
+          flow: 'accepted',
+          evidence:
+            'All 27 new matters opened in June were screened against the consolidated sanctions ' +
+            'list before the client care letter was issued. Screening reference numbers are ' +
+            'recorded on each matter file; two potential name matches were reviewed and ' +
+            'discounted with a written rationale.',
+        },
+        { control: createdControls[4]!, dueInDays: -4, flow: 'open' }, // Undertakings register (overdue)
+        { control: createdControls[7]!, dueInDays: 6, flow: 'open' }, // Client account reconciliation
+        { control: createdControls[6]!, dueInDays: 27, flow: 'open' }, // Client care letters
       ] as const;
 
       for (const plan of assignmentPlans) {
@@ -146,32 +212,48 @@ async function main(): Promise<void> {
           controlId: plan.control.id,
         });
 
-        if (plan.flow === 'submitted' || plan.flow === 'accepted') {
-          await assignments.setEvidenceNote(
-            tx,
-            org.id,
-            assignment.id,
-            employeeUser.id,
-            'Evidence recorded: checklist completed and archived in the compliance folder.'
-          );
-          await auditLog.appendAuditEntry(tx, org.id, {
-            userId: employeeUser.id,
-            action: 'evidence_added',
-            controlId: plan.control.id,
-          });
-          await assignments.submitForReview(tx, org.id, assignment.id, employeeUser.id);
-          await auditLog.appendAuditEntry(tx, org.id, {
-            userId: employeeUser.id,
-            action: 'submitted_for_review',
-            controlId: plan.control.id,
-          });
-        }
+        if (plan.flow === 'open') continue;
+
+        await assignments.setEvidenceNote(
+          tx,
+          org.id,
+          assignment.id,
+          employeeUser.id,
+          plan.evidence
+        );
+        await auditLog.appendAuditEntry(tx, org.id, {
+          userId: employeeUser.id,
+          action: 'evidence_added',
+          controlId: plan.control.id,
+        });
+        await assignments.submitForReview(tx, org.id, assignment.id, employeeUser.id);
+        await auditLog.appendAuditEntry(tx, org.id, {
+          userId: employeeUser.id,
+          action: 'submitted_for_review',
+          controlId: plan.control.id,
+        });
+
         if (plan.flow === 'accepted') {
           await assignments.reviewAssignment(tx, org.id, assignment.id, 'accepted', null);
           await controls.updateControlStatus(tx, org.id, plan.control.id, 'passed');
           await auditLog.appendAuditEntry(tx, org.id, {
             userId: managerUser.id,
             action: 'review_accepted',
+            controlId: plan.control.id,
+          });
+        }
+        if (plan.flow === 'rejected') {
+          await assignments.reviewAssignment(
+            tx,
+            org.id,
+            assignment.id,
+            'rejected',
+            plan.rejectionReason
+          );
+          await controls.updateControlStatus(tx, org.id, plan.control.id, 'pending');
+          await auditLog.appendAuditEntry(tx, org.id, {
+            userId: managerUser.id,
+            action: 'review_rejected',
             controlId: plan.control.id,
           });
         }
@@ -185,7 +267,7 @@ async function main(): Promise<void> {
       });
       await importProfiles.createProfile(tx, org.id, {
         name: 'Minimal (name + description)',
-        columnMapping: { name: 'Control Name', description: 'Details' },
+        columnMapping: { name: 'Control Name', description: 'Description' },
         createdBy: managerUser.id,
       });
 

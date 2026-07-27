@@ -48,20 +48,29 @@ deletion) treated as first-class deliverables.
 ## CSV import with provenance
 
 Admins and managers can bulk-import compliance controls from a CSV file
-(`Import` in the sidebar). The flow is deliberately staged:
+(`Import` in the sidebar). No file to hand? The upload step offers a **blank
+template** and a **sample file** — the sample deliberately includes rows with a
+missing name, a past due date and an unparseable date, so a dry run shows how
+rejections are reported rather than a uniform pass. The accepted format is
+stated on screen: `Control Name` (required, ≤255 characters), `Description`,
+`Category`, and `Due Date` (`YYYY-MM-DD`, must be in the future).
+
+The flow is deliberately staged:
 
 1. **Upload** — the file (max 5MB, `text/csv` only, MIME-checked server-side)
    is parsed in memory. The response is the detected headers plus the first
    five rows as a preview. The file is never written to disk or stored; only
    its SHA-256 checksum is ever persisted.
 2. **Map** — CSV columns are mapped to control fields: `name` (required),
-   `description`, `category`, `due_date` (optional). Mappings can be saved as
-   named, organisation-scoped profiles and reused (admins and managers create
-   and use profiles; only admins delete them).
+   `description`, `category`, `due_date` (optional). Common headers are
+   detected automatically (`Due Date`, `due_date`, `Deadline` all match the
+   due-date field) and pre-filled for you to confirm or change. Mappings can
+   be saved as named, organisation-scoped profiles and reused (admins and
+   managers create and use profiles; only admins delete them).
 3. **Dry run** — every row is validated: name present and ≤ 255 characters;
    `due_date`, when present, a real future `YYYY-MM-DD` date. The summary
-   lists each rejected row with its number, original values and a specific
-   reason. Nothing is written.
+   previews the controls that would be created and lists each rejected row
+   with its number, original values and a specific reason. Nothing is written.
 4. **Confirm** — a separate request that re-submits the file and re-validates
    every row server-side (a client claim that "these rows passed" is ignored
    — there is no server-side draft state to tamper with). Accepted rows
@@ -265,6 +274,7 @@ Or run the whole backend stack containerised: `docker compose up --build`.
 | `OPENAI_API_KEY`        | when `AI_FEATURE_ENABLED=true`    | —             | OpenAI API key; startup exits 1 if missing while AI is enabled |
 | `OPENAI_MODEL`          | no                                | `gpt-4o-mini` | Model used for AI evidence review                              |
 | `AI_REQUEST_TIMEOUT_MS` | no                                | `30000`       | Per-call OpenAI timeout in milliseconds                        |
+| `DEMO_MODE`             | no                                | `false`       | Shows a role-aware demo scenario card; off for real deployments |
 
 ## Test suite
 
@@ -325,12 +335,40 @@ Demo organisation (Acme Legal LLP) accounts — **demo environment only**:
 | Manager  | manager@demo.sentinel.app   | `SentinelDemo!2026` |
 | Employee | employee@demo.sentinel.app  | `SentinelDemo!2026` |
 
-The seeded demo organisation includes two saved import mapping profiles, one
-completed import run with mixed accepted and rejected rows (processed through
-the real validation pipeline, so the stored checksums verify), and the AI
-review feature enabled. AI review requests only reach OpenAI if the
-deployment sets `AI_FEATURE_ENABLED=true` with a real `OPENAI_API_KEY`;
-nothing at seed time calls any API.
+The seeded demo organisation is a mid-quarter snapshot of an SRA-regulated
+firm: 14 controls across AML, Conduct, Client care, Client money, Records,
+Training, Security, Governance and Resilience — each with a category and due
+date — assignments in every state the UI can render, two saved import mapping
+profiles, and one completed import run with mixed accepted and rejected rows
+(processed through the real validation pipeline, so the stored checksums
+verify). With `DEMO_MODE=true` each dashboard opens with a scenario card
+naming your persona and what to try.
+
+### Try the demo in five minutes
+
+1. **Sign in as the manager** (`manager@demo.sentinel.app`). The guided tour
+   starts on first login; the scenario card lists what to try.
+2. **Review evidence.** Two submissions are waiting. One — client due
+   diligence sampling — carries detailed evidence; the other is a one-line
+   "Checked — all fine."
+3. **Run AI review on both.** Open each control and press *Request AI review*.
+   The detailed note comes back as an assessment quoting the evidence
+   verbatim; the vague one returns an explicit insufficient-evidence result,
+   because the citation check is enforced in application code rather than
+   trusted to the model.
+4. **Import controls.** Go to *Import*, download the sample file, and run a
+   dry run: 9 rows accepted, 3 rejected with a specific reason each. Confirm,
+   then expand the run in the history to see per-row checksums.
+5. **Sign in as the admin** (`admin@demo.sentinel.app`) to see the
+   organisation-wide picture, toggle AI review and its rate limits, and read
+   the append-only audit log — which now contains everything you just did.
+6. **Sign in as the employee** (`employee@demo.sentinel.app`) to see the other
+   side: open assignments, an overdue one, and a rejected submission with the
+   reviewer's reason to revise and resubmit.
+
+AI review requests only reach OpenAI if the deployment sets
+`AI_FEATURE_ENABLED=true` with a real `OPENAI_API_KEY`; nothing at seed time
+calls any API.
 
 ## Deployment
 
