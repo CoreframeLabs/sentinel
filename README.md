@@ -351,6 +351,18 @@ migration version.
 - API health: `https://sentinel-frontend-woad.vercel.app/health` (proxied to
   the backend, proving the same-origin rewrite chain)
 
+When the backend reports `DEMO_MODE=true`, the sign-in page offers a
+**one-click "Sign in as Admin / Manager / Employee"** button per persona, so a
+visitor is never stopped by a credential wall.
+
+Those buttons are not a bypass. Each one performs an ordinary
+`POST /api/auth/login` with the seeded fixture credentials below — there is no
+demo-only endpoint, no session shortcut and no relaxed authorisation. The
+request goes through bcrypt verification, the login rate limiter, session
+regeneration and the same organisation scoping as any other user, so a demo
+session can only ever reach the seeded demo tenant. The buttons are rendered
+only when `DEMO_MODE=true`, so a real customer deployment never shows them.
+
 Demo organisation (Acme Legal LLP) accounts — **demo environment only**:
 
 | Role     | Email                       | Password            |
@@ -358,6 +370,11 @@ Demo organisation (Acme Legal LLP) accounts — **demo environment only**:
 | Admin    | admin@demo.sentinel.app     | `SentinelDemo!2026` |
 | Manager  | manager@demo.sentinel.app   | `SentinelDemo!2026` |
 | Employee | employee@demo.sentinel.app  | `SentinelDemo!2026` |
+
+These are fixtures created by `packages/backend/scripts/seed.ts`, mirrored for
+the frontend in `packages/frontend/src/lib/demoAccounts.ts`. They are
+deliberately public and guard nothing but obviously fictional data; keep the
+two files in step.
 
 The seeded demo organisation is a mid-quarter snapshot of an SRA-regulated
 firm: 14 controls across AML, Conduct, Client care, Client money, Records,
@@ -368,10 +385,34 @@ profiles, and one completed import run with mixed accepted and rejected rows
 verify). With `DEMO_MODE=true` each dashboard opens with a scenario card
 naming your persona and what to try.
 
+### Keeping the demo warm
+
+The demo backend runs on Render's free tier, which spins the service down
+after roughly 15 minutes of inactivity. A cold request has been measured at
+25s and, at worst, over 60s — against ~2.7s warm.
+
+`.github/workflows/keep-warm.yml` mitigates that: it pings `/health` every 10
+minutes (and on `workflow_dispatch`, to wake the demo on demand before sending
+a link). `/health` is the right target because it opens a real PostgreSQL
+connection, so it warms the database pool as well as the Node process — a
+static asset would wake only the container.
+
+Read the honest limits in that file's header comments: GitHub's scheduled
+triggers are best-effort and can be delayed under load, so this reduces cold
+starts rather than eliminating them, and GitHub auto-disables scheduled
+workflows on repositories with no activity for 60 days. The real fix is a host
+without scale-to-zero.
+
+The job fails (non-zero, red in the Actions tab) if `/health` does not return
+200 after three attempts, so a genuine outage is visible rather than silently
+swallowed. Set the repository variable `BACKEND_HEALTH_URL` to point it at a
+different deployment.
+
 ### Try the demo in five minutes
 
-1. **Sign in as the manager** (`manager@demo.sentinel.app`). The guided tour
-   starts on first login; the scenario card lists what to try.
+1. **Sign in as the manager** — one click on *Sign in as Manager*, or
+   `manager@demo.sentinel.app`. The guided tour starts on first login; the
+   scenario card lists what to try.
 2. **Review evidence.** Two submissions are waiting. One — client due
    diligence sampling — is a complete record: narrative, method, period,
    sample of 10 from 41, and where it is filed. The other is a bare
@@ -412,7 +453,9 @@ calls any API.
    [environment variables](#environment-variables)).
 4. Health check path: `/health`. Migrations run automatically on boot.
 5. Seed the demo org once: `railway run npm run seed` (from
-   `packages/backend`).
+   `packages/backend`). For a demo deployment also set `DEMO_MODE=true`, which
+   turns on the scenario card and the one-click demo sign-in buttons. Leave it
+   unset for a real customer deployment.
 
 **Vercel (frontend)**
 
@@ -428,6 +471,10 @@ calls any API.
 GitHub Actions (`.github/workflows/ci.yml`): install → typecheck → lint →
 test against a PostgreSQL service container → frontend build → backend Docker
 image build → dependency audit on production dependencies.
+
+A second workflow, `.github/workflows/keep-warm.yml`, is operational rather
+than gating: it keeps the free-tier demo backend awake and alerts on a real
+outage. See [Keeping the demo warm](#keeping-the-demo-warm).
 
 The audit step (`scripts/check-audit.js`) wraps `npm audit` rather than
 calling it directly: it fails on any high/critical finding except advisories

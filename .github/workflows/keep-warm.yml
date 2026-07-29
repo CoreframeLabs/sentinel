@@ -1,0 +1,139 @@
+name: Keep backend warm
+
+# ---------------------------------------------------------------------------
+# Why this exists
+#
+# The Sentinel API runs on Render's free tier, which spins the service down
+# after roughly 15 minutes with no inbound traffic. The next visitor then pays
+# a full cold start: measured at ~25s on a good run and over 60s on a bad one,
+# against ~2.7s once warm. For a live sales demo that is the difference
+# between "fast" and "broken".
+#
+# This workflow keeps a trickle of traffic going so the service stays up.
+#
+# Be clear about what this is NOT:
+#
+#   * It is a mitigation, not a fix. The real fix is a paid Render instance
+#     (or any host without scale-to-zero). Treat this as a stopgap that makes
+#     the free tier presentable, not as a reliability guarantee.
+#   * GitHub's scheduled triggers are BEST-EFFORT. The docs are explicit that
+#     runs can be delayed when the platform is under load, and delays of 10+
+#     minutes are routine (the top of the hour is the worst). A delayed run
+#     means the service will have spun down and a visitor arriving in that
+#     window still eats a cold start. The interval below is deliberately
+#     tighter than Render's idle timeout to buy margin, but margin is not a
+#     promise.
+#   * GitHub DISABLES scheduled workflows on public repositories after 60 days
+#     with no repository activity, and emails the repo admins when it does. If
+#     the demo starts sleeping again months from now, check the Actions tab
+#     first: this workflow has probably been auto-disabled and just needs
+#     re-enabling (or any push to wake it up).
+#
+# Cost: this repository is public, so Actions minutes are free and unlimited.
+# If it is ever made private, revisit the interval — at ~144 runs/day, with
+# GitHub's 1-minute minimum billing granularity, this would exceed the free
+# private-repo allowance on its own.
+# ---------------------------------------------------------------------------
+
+on:
+  schedule:
+    # Every 10 minutes, deliberately offset off the hour. Render's idle
+    # timeout is ~15 minutes, so a 10-minute cadence tolerates one skipped or
+    # moderately delayed run before the service actually sleeps. The :03 / :13
+    # offset dodges the on-the-hour scheduling stampede, which is when
+    # GitHub's queue delays are worst.
+    - cron: '3,13,23,33,43,53 * * * *'
+
+  # Manual trigger: useful to wake the demo immediately before sending a link
+  # to a prospect, and to confirm the endpoint is genuinely up after an alert.
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Health endpoint to ping (blank = the configured backend)'
+        required: false
+        type: string
+
+# Never let a slow run overlap the next scheduled one. If a ping is still
+# retrying through a cold start when the next tick fires, the newer run waits
+# rather than piling on.
+concurrency:
+  group: keep-warm
+  cancel-in-progress: false
+
+# This job touches nothing in the repository, so the GITHUB_TOKEN gets no
+# scopes at all.
+permissions: {}
+
+jobs:
+  ping:
+    name: Ping /health
+    runs-on: ubuntu-latest
+    # A cold start plus two retries fits comfortably inside this. If the job
+    # is still running at 5 minutes, something is genuinely wrong.
+    timeout-minutes: 5
+
+    steps:
+      # No actions/checkout on purpose: the job needs nothing from the repo,
+      # and skipping it keeps the run to a few seconds of runner time.
+      - name: Ping health endpoint
+        env:
+          # Override without editing this file by setting the repository
+          # variable BACKEND_HEALTH_URL (Settings > Secrets and variables >
+          # Actions > Variables). The fallback is a public URL, not a secret —
+          # it is already published in packages/frontend/vercel.json and the
+          # README. No credential belongs in this workflow.
+          HEALTH_URL: ${{ inputs.url || vars.BACKEND_HEALTH_URL || 'https://sentinel-qpwf.onrender.com/health' }}
+        run: |
+          # No `set -e`: the retry loop inspects curl's exit status itself.
+          set -uo pipefail
+
+          MAX_ATTEMPTS=3
+          # Must comfortably exceed a worst-case cold start (measured >60s),
+          # otherwise this job would report an outage every time it is the
+          # request that does the waking.
+          TIMEOUT_SECONDS=90
+          BODY="$RUNNER_TEMP/health-response"
+
+          echo "Pinging $HEALTH_URL"
+
+          code=000
+          for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
+            # -sS stays quiet on success but still prints transport errors.
+            # A non-zero curl exit (DNS, TLS, timeout) is normalised to 000 so
+            # the loop treats it the same as a bad status code.
+            result=$(curl -sS -o "$BODY" -w '%{http_code} %{time_total}' \
+                          --max-time "$TIMEOUT_SECONDS" "$HEALTH_URL") \
+              || result="000 $TIMEOUT_SECONDS"
+
+            code=${result%% *}
+            seconds=${result##* }
+            echo "attempt $attempt/$MAX_ATTEMPTS: HTTP $code in ${seconds}s"
+
+            if [ "$code" = "200" ]; then
+              echo "body: $(cat "$BODY")"
+
+              # Surface a slow success rather than hiding it. A 200 that took
+              # 10s+ means this ping WAS the cold start — the service had
+              # already gone to sleep, so the schedule is not keeping up.
+              slow=$(awk -v t="$seconds" 'BEGIN { print (t > 10) ? "yes" : "no" }')
+              if [ "$slow" = "yes" ] || [ "$attempt" -gt 1 ]; then
+                echo "::warning::Backend answered but was cold (${seconds}s on attempt $attempt). This ping paid the wake-up cost, so a visitor in that window would have too."
+              fi
+
+              echo "Backend healthy: HTTP 200 in ${seconds}s" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            echo "::warning::attempt $attempt returned HTTP $code"
+            if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then
+              sleep 15
+            fi
+          done
+
+          # Fail loudly. A red run in the Actions tab (and the failure email
+          # GitHub sends for scheduled workflows) is the whole point: a real
+          # outage must be visible, not silently swallowed by a job that
+          # always passes.
+          echo "::error::$HEALTH_URL did not return 200 after $MAX_ATTEMPTS attempts over ~$((MAX_ATTEMPTS * TIMEOUT_SECONDS))s. Last status: $code. The API returns 503 when it is up but cannot reach PostgreSQL, and 000 here means it was unreachable entirely."
+          echo "Backend UNHEALTHY: last status $code after $MAX_ATTEMPTS attempts" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
