@@ -347,8 +347,8 @@ migration version.
 
 ## Live demo
 
-- Frontend: `https://sentinel-frontend-woad.vercel.app`
-- API health: `https://sentinel-frontend-woad.vercel.app/health` (proxied to
+- Frontend: `https://sentinel.coreframe-labs.dev`
+- API health: `https://sentinel.coreframe-labs.dev/health` (proxied to
   the backend, proving the same-origin rewrite chain)
 
 When the backend reports `DEMO_MODE=true`, the sign-in page offers a
